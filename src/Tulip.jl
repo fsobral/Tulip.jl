@@ -39,7 +39,10 @@ include("Presolve/Presolve.jl")
 
 # IPM solvers
 include("./IPM/IPM.jl")
-
+# incluir Corretor-Quasi-Newton
+include("./IPM/MPC-PEDRO/Quasi-Newton-Corrector.jl")
+# incluir funcoes uteis
+include("./IPM/MPC-PEDRO/load_problems.jl")
 
 include("parameters.jl")
 

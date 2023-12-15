@@ -21,5 +21,5 @@ Base.@kwdef mutable struct IPMOptions{T}
     PRegMin::T = sqrt(eps(T))  # primal
     DRegMin::T = sqrt(eps(T))  # dual
 
-    Factory::Factory{<:AbstractIPMOptimizer} = Factory(HSD)
+    Factory::Factory{<:AbstractIPMOptimizer} = Factory(MPC)#Factory(HSD)
 end

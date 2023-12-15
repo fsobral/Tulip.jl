@@ -1,0 +1,393 @@
+using LinearAlgebra
+import LinearAlgebra: ldiv!
+
+mutable struct GoodBroyden{S}
+
+    lu
+    u :: Vector{Vector{S}}
+    sb :: Vector{Vector{S}}
+    rho :: Vector{S}
+    size :: Int
+
+    function GoodBroyden(lu, max_size=10)
+        return new{Float64}(lu, Vector{Vector{Float64}}(undef, max_size), Vector{Vector{Float64}}(undef, max_size), Vector{Float64}(undef, max_size), 0)
+    end
+end
+
+"""
+    ldiv!(A::GoodBroyden, b, x)
+
+Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden update.
+"""
+LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin
+
+    # Resolve o caso base
+    ldiv!(A.lu, b)
+    for i = 1:A.size[]
+        u = A.u[i]
+        sb = A.sb[i]
+        rho = A.rho[i]
+        b .= b + (dot(sb, b) / rho) * u
+
+    end
+
+    nothing
+
+end
+
+"""
+Updates the Good Broyden approximation.
+"""
+function update!(B::GoodBroyden, s, b)
+
+    size = B.size + 1
+    B.u[size] = b
+    ldiv!(B, B.u[size])
+    y = s - B.u[size]
+    println("up: Hy = ", y)
+    B.rho[size] = dot(s, y)
+#    B.rho[size] = -dot(s, B.u[size]) + dot(s, s) #-dot(s, B.u[size]) + dot(s, s)
+    println("rho = ", B.rho[size])
+    B.sb[size] = s
+    B.size    = size
+
+end
+
+function Broyden_parada(F_tau, w, sig, sig_max, mu_wk, m, n, it, it_max, eps)
+#  if norm(F_tau(w, sig*mu_wk)) < eps
+#      println("O Método de Broyden Convergiu.")
+#    return (true, true)
+#  end
+  if (dot(w[1:n], w[n+m+1: 2*n+m]) / n) < sig*mu_wk && minimum([minimum(w[1:n]), minimum(w[n+m+1: 2*n+m])]) > 0 #-sqrt(eps) # trocar < por <= se nao der certo
+    println("Broyden interrompido: houve decréscimo suficiente de mu.")
+    return (true, true)
+  else
+    if it < it_max
+      return (false, nothing)
+    else
+    println("Broyden interrompido: o limite de iterações foi atingido.")
+    return (true, false)
+    end
+  end
+end
+
+function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps = 1.0e-8, it_max = 100)
+
+  status = false
+  #B = Jw #GoodBroyden(Jw, it_max)
+  # primeira iteração
+  it = 1
+  sb = -F_tau(w, sig*mu_wk)
+  ldiv!(B, sb)
+  w .= w + sb
+  #update!(B, sb, -F_tau(w, sig*mu_wk))
+  y = F_tau(w, sig*mu_wk) - F_tau(w - sb, sig*mu_wk)
+  ldiv!(B, y)
+  println("Hy = ", y)
+  u = sb - y
+  u = -F_tau(w, sig*mu_wk)
+  ldiv!(B, u)
+  rho = dot(sb, y)
+  println("rho explicito, $(rho)")
+  update!(B, sb, -F_tau(w, sig*mu_wk))
+
+
+  while true
+     it_max = 1
+#     println("it = $(it), it_max = $(it_max)")
+    (parar, status) = Broyden_parada(F_tau, w, sig, sig_max, mu_wk, m, n, it, it_max, eps)
+
+    if parar == true
+      break
+    end
+    
+    it += 1
+    if abs(B.rho[it-1]) < 1.0e8
+      mult = (1/B.rho[it-1])
+    else
+      mult = 0
+    end
+    
+    sb = -F_tau(w, sig*mu_wk)
+    #println("sb = ", sb)
+    ldiv!(B, sb)
+    #println("sb = ", sb)
+    #sb = (dot(B.sb[it-1], B.u[it-1]) * mult) * B.u[it-1]
+    #sb .= sb + B.u[it-1]
+
+    
+
+    w .= w + sb
+    update!(B, sb, -F_tau(w, sig*mu_wk))
+  end
+  println("Nº de iterações de Broyden: ", it)
+  return status
+end
+
+function Quasi_Newton_Corrector!(mpc :: MPC, z, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 100)
+
+   # Names
+    dat = mpc.dat
+    pt = mpc.pt
+    res = mpc.res
+
+    m, n, p = pt.m, pt.n, pt.p
+
+    A = dat.A
+    b = dat.b
+    c = dat.c
+
+    w = vcat(pt.x, pt.y, z)
+
+#  for i=1:2*n+m
+#      mod = abs(w[i])
+#      if mod < 1.0e-4
+#          w[i] = mod
+#      end
+#  end
+    
+F_tau(w, tau) = begin
+    x = w[1:n]
+    lamb = w[n+1:n+m]
+    s = w[n+m+1:2*n+m]
+    v = zeros(2*n+m)
+
+    rc = v[1:n]
+    rb = v[n+1:n+m]
+    r_mu = v[n+m+1:2*n+m]
+    for i=1:n
+      v[i] = dot(A[:, i], lamb) + s[i] - c[i]
+      v[n+m+i] = x[i]*s[i] - tau
+    end
+    for i=1:m
+      v[n+i] = dot(A[i, :], x) - b[i]
+    end
+    return v    
+
+#    if tau == 0
+#      return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n))
+#    end
+#    return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n) - tau*ones(n))
+  end
+  J(w) = begin
+    x = w[1:n]
+    s = w[n+m+1:2*n+m]
+    M = zeros(2*n+m, 2*n+m)
+    M[1:n, n+1:n+m] = A'
+    M[1:n, n+m+1:2*n+m] = I(n)
+    M[n+1:n+m, 1:n] = A
+    M[n+m+1:2*n+m, 1:n] = diagm(s)
+    M[n+m+1:2*n+m, n+m+1:2*n+m] = diagm(x)
+    return M
+#    return vcat(hcat(zeros(n, n), A', I),
+#             hcat(A, zeros(m, m+n)),
+#             hcat(diagm(s), zeros(n, m), diagm(x))
+#               )
+  end
+
+  x = w[1:n]
+  lamb = w[n+1:n+m]
+  s = w[n+m+1:2*n+m]
+  println("mu0 = ", dot(x, s)/n)
+  J_temp = J(w)
+  j = 0
+  while abs(det(J_temp)) < eps
+    J_temp += (2^j)*eps*I
+    j += 1
+  end
+  Jw = GoodBroyden(lu(J_temp), it_max)
+  # Passo 1
+  d = vcat(mpc.Δ.x, mpc.Δ.y, - A'*mpc.Δ.y)
+  # Passo 2
+  alpha = min(1.0, 0.9*mpc.αp)
+  # Passo 3
+  sig = 0.5*sig_max
+  # Passo 4
+  mu_wk = dot(x, s)/n
+  w_n = zeros(2*n+m)
+  t = 1
+#  status = true
+  while true
+    println("Testagem: ", t)
+    println("Alfa = ", alpha)
+    println("Sigma = ", sig)
+
+    w_n .= w + alpha*d
+
+#    if minimum([minimum(w_n[1:n]), minimum(w_n[n+m+1: 2*n+m])]) < -sqrt(eps)
+#      error("O ponto é inviável! Provavelmente o valor alpha_max foi determinado incorretamente ou o ponto inicial w não estava em F_0.")
+#    end
+     b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
+     Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
+#    if minimum([minimum(w_n[1:n]), minimum(w_n[n+m+1: 2*n+m])]) < 0
+#      error("O ponto é inviável!")
+#    end
+    println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
+    println("Status (Broyden) = ", b_status)
+#    mu_n = (w_n[1:n]'*w_n[n+m+1:2*n+m])/n
+    if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
+      break
+    end
+    alpha *= 0.5
+    sig = 0.5*(sig_max + sig)
+    if abs(sig_max - sig) < eps # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
+      #status = false
+      error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
+#      break
+    end
+    t += 1
+  end
+  # Passo 5 (adaptado: atualizar direcao)
+  w_n .= w_n .- w
+  mpc.Δc.x .= w_n[1:n]
+  mpc.Δc.y .= w_n[n+1:n+m] # talvez precise atualizar mais coisas em delta_c
+  
+end
+
+function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max2=100)
+  m, n = size(A)
+  k = 0
+  w0 = copy(w)
+
+  F_tau(w, tau) = begin
+    x = w[1:n]
+    lamb = w[n+1:n+m]
+    s = w[n+m+1:2*n+m]
+    if tau == 0
+      return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n))
+    end
+    return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n) - tau*ones(n))
+  end
+  J(w) = begin
+    x = w[1:n]
+    s = w[n+m+1:2*n+m]
+    return vcat(hcat(zeros(n, n), A', I),
+             hcat(A, zeros(m, m+n)),
+             hcat(diagm(s), zeros(n, m), diagm(x))
+               )
+  end
+  while k < it_max1
+    k += 1
+    println("")
+    println("Nº da iteração = ", k)
+    status = true
+    println("mu_$(k-1) = ", (1/n)*w0[1:n]'w0[n+m+1:2*n+m])
+    (w0, status) = iteracao(F_tau, J, w0, it_max2, eps, sig_max, m, n)
+    mu = (w0[1:n]'*w0[n+m+1:2*n+m])/n
+    if status == false
+      error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
+    end
+    if mu < eps
+      break
+    end
+  end
+  println("")
+  println("RESULTADO FINAL:")
+  println("Nº de Iterações: ", k)
+  println("Solução:")
+  println("x = ")
+  display(w0[1:n])
+  println("lambda = ")
+  display(w0[n+1:n+m])
+  println("s = ")
+  display(w0[n+m+1:2*n+m])
+  #return (w0, k)
+end
+
+using ForwardDiff
+
+function Encontrar_Ponto_Inicial(c, A, b, M = 1.0, mu = 10.0, eps = 1.0e-4, it_max=1000)
+  m, n = size(A)
+  F(w) = begin
+    x = w[1:n]
+    lamb = w[n+1:n+m]
+    s = w[n+m+1:2*n+m]
+    return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n) - mu*ones(n))
+  end
+  JF(w) = ForwardDiff.jacobian(F, w)
+  w0 = rand(2*n+m)
+  for i=1:(2n+m)
+    w0[i] = abs(w0[i])
+  end
+  w0 = M*w0
+  status = false
+  pos = true
+  k = 0
+  while k < it_max
+    J = JF(w0)
+    d = - J'*((J*J') \ F(w0))
+    alpha = 1.0
+    while alpha >= eps
+      w1 = w0 + alpha*d
+      x1 = w1[1:n]
+      s1 = w1[n+m+1:2*n+m]
+      if (F(w1) <= F(w0)) && minimum(x1) > eps && minimum(s1) > eps
+        pos = true
+        break
+      end
+      pos = false
+      alpha *= 0.5
+      if alpha < eps
+        return (w0, status)
+      end
+    end
+    w0 = w0 + alpha*d
+    if (norm(F(w0)) < eps) && (pos == true)
+      status = true
+    end
+    k += 1
+  end
+  return (w0, status)
+end
+
+function chutar_e_encontrar(c, A, b, mu = 10, M = 1.0, eps = 1.0e-4, it_max=1000)
+# Essa procura a solução até encontrar (pode demorar muito)
+    while true
+      (w, status) = Encontrar_Ponto_Inicial(c, A, b, M, mu, eps, it_max)
+        if status == true
+            return w
+        end
+    end
+end
+
+function Encontrar_Ponto_Inicial2(c, A, b, mu = 1.0, theta = 0.25, eps = 1.0e-4, it_max=1000)
+# Essa procura a solução até encontrar (pode demorar muito)
+    while true
+        w = Encontrar_Ponto_Inicial(c, A, b, mu, theta, eps, it_max)
+        if !(w == false)
+            return w
+        end
+    end
+end
+
+function chamar_problema_simples(i)
+
+  if i == 1
+    c = [1., 0]
+    A = [1. 1]
+    b = [1]
+    return (c, A, b)
+  elseif i == 2
+    c = [-1., -1, 0, 0]
+    A = [-1. 3 1 0; 5 -3 0 1]
+    b = [9., 15]
+    return (c, A, b)
+  elseif i == 3
+    c = [0, 1., 0]
+    A = [1. 2 1]
+    b = [6.]
+    return (c, A, b)
+  else
+    error("Problema não encontrado.")
+  end
+
+end
+
+
+# EX:
+# min x_1
+# s.a: x_1 + x_2 = 1
+# (x_1, x_2) >= 0
+# c = [1., 0]
+# A = [1. 1]
+# b = [1.]
