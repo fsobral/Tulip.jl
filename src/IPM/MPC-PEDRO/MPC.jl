@@ -239,8 +239,10 @@ function update_solver_status2!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) whe
 
     # Check for optimal solution
 
-    z = mpc.dat.c - mpc.dat.A'*pt.y
-    if dot(pt.x, z) <= 1.0e-8*length(z) # parar quando mu zerar
+    z = pt.z#mpc.dat.c - mpc.dat.A'*pt.y
+    println("mu = ", abs(dot(pt.x, z))/length(z))
+    menor_entrada = minimum([minimum(pt.x), minimum(z)])
+    if  abs(dot(pt.x, z)) <= 1.0e-8*length(z) && menor_entrada > -1.0e-4# parar quando mu zerar
         mpc.primal_status = Sln_Optimal
         mpc.dual_status   = Sln_Optimal
         mpc.solver_status = Trm_Optimal
@@ -390,6 +392,12 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
         # Q: should we use more arguments here?
         try
             @timeit mpc.timer "Step" compute_step!(mpc, params)
+            println("x=")
+            display(mpc.pt.x)
+            println("lambda=")
+            display(mpc.pt.y)
+            println("s=")
+            display(mpc.pt.z)
         catch err
 
             if isa(err, PosDefException) || isa(err, SingularException)
@@ -438,9 +446,19 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
     KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
     KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
 
-    pt.x, pt.y, z = make_feasible(A, b, c, 10.0)
+    pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
+    z = pt.z
+    println("<< PONTO INICIAL >>")
+    println("x=")
+    display(pt.x)
+    println("lambda=")
+    display(pt.y)
+    println("s=")
+    display(pt.z)
 
-#    println("Ponto inicial: ", (pt.x, pt.y, z))
+
+
+    #    println("Ponto inicial: ", (pt.x, pt.y, z))
 
     δx = zeros(T)
     @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
@@ -481,6 +499,7 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
 
     # Update centrality parameter
     update_mu!(mpc.pt)
+
 
 end
 

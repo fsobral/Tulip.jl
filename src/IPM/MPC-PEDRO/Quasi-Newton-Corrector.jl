@@ -60,7 +60,7 @@ function Broyden_parada(F_tau, w, sig, sig_max, mu_wk, m, n, it, it_max, eps)
             return (true, false)
         end
     end
-    if (dot(w[1:n], w[n+m+1: 2*n+m]) / n) < sig*mu_wk && minimum([minimum(w[1:n]), minimum(w[n+m+1: 2*n+m])]) > 0 #-sqrt(eps) # trocar < por <= se nao der certo
+    if 0 <= (dot(w[1:n], w[n+m+1: 2*n+m]) / n) < sig*mu_wk && minimum([minimum(w[1:n]), minimum(w[n+m+1: 2*n+m])]) > 0 #-sqrt(eps) # trocar < por <= se nao der certo
         #    println("Broyden interrompido: houve decréscimo suficiente de mu, e o ponto encontrado está em F_0.")
         return (true, true)
     else
@@ -108,7 +108,9 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max)
     return status
 end
 
-function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 100)
+function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
+
+    #1-1.0e-4
 
     # Names
     dat = mpc.dat
@@ -162,20 +164,60 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
     lamb = w[n+1:n+m]
     s = w[n+m+1:2*n+m]
     J_temp = J(w)
+    println("Jac=")
+    display(J_temp)
 
     # correção para garantir a decomposição lu (resolve a questão da invertibilidade da matriz, mas a convergencia ainda é muito improvavel)
-    #  mult = 1
-    #  while abs(det(J_temp)) < eps
-    #    J_temp += (2^mult)*eps*I
-    #    mult += 1
-    #  end
+    if true
+    fatoracao = nothing
+    mult = 1
+    while true
+        try fatoracao = lu(J_temp)
+            break
+        catch
+            J_temp += (2^mult)*eps*I
+            #J_temp[(n+m+1):(2*n+m), 1:n] += (2^mult)*eps*I
+            #J_temp[(n+m+1):(2*n+m), (n+m+1):(2*n+m)] += (2^mult)*eps*I
+            mult += 1
+        end
+    end
+  else
+    fatoracao = lu(J_temp)
+  end
     # ----------------------------------------
 
-    Jw = GoodBroyden(lu(J_temp), it_max)
+    Jw = GoodBroyden(fatoracao, it_max)
     # Passo 1
-    d = vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização
+    d = - (J_temp \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
+    mpc.Δ.x = d[1:n]
+    mpc.Δ.y = d[n+1:n+m]
+
     # Passo 2
-    alpha = min(1.0, 0.9*mpc.αp)
+    
+  alpha = 10.0
+  for i=1:n
+    if d[i] < 0
+      temp = - w[i]/d[i]
+      if temp < alpha
+        alpha = temp
+      end
+    end
+    if d[n+m+i] < 0
+      temp = - w[n+m+i]/d[n+m+i]
+      if temp < alpha
+        alpha = temp
+      end
+    end
+    if alpha < 0
+      alpha = 0
+      break
+    end
+  end
+
+    alpha0 = min(1.0, 0.9*alpha)
+#    alpha0 = 0.9*alpha
+    mpc.αp, mpc.αd = alpha0, alpha0
+    alpha = alpha0
     # Passo 3
     sig = 0.5*sig_max
     # Passo 4
@@ -190,12 +232,16 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
 
         w_n .= w + alpha*d
 
+        println("Ponto inicial do Broyden")
+        display(w_n)
+
+        println("mu (após newton) = ", dot(w_n[1:n], w_n[n+m+1:2*n+m])/n)
+
         b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
         Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
         println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
         println("Status (Broyden) = ", b_status)
-
         if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
             break
         end
@@ -203,14 +249,48 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
         sig = 0.5*(sig_max + sig)
         #    if abs(sig_max - sig) < 1.0e-8 # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
         if t == 30 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
-            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
+            #            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
+            an = alpha0
+            w_n .= w + an*d
+            while true
+              if 0 <= dot(w_n[1:n], w_n[n+m+1:2*n+m])/n <= mu_wk
+                break
+              else
+                an *= 0.5
+                w_n .= w + an*d
+              end
+            end
+            sig_bom = ((dot(w_n[1:n], w_n[n+m+1:2*n+m])/n)/(dot(w[1:n],w[n+m+1:2*n+m])/n))^3
+            println("sig_bom = ", sig_bom)
+            dc = - (J_temp \ F_tau(w_n, sig_bom*dot(w_n[1:n], w_n[n+m+1:2*n+m])/n))
+
+            ac = 1.0
+            w_n2 = w_n + dc
+            while true
+              if 0 <= dot(w_n2[1:n], w_n2[n+m+1:2*n+m])/n <= dot(w_n[1:n], w_n[n+m+1:2*n+m])/n && minimum([minimum(w_n2[1:n]), minimum(w_n2[n+m+1:2*n+m])]) > 0
+              break
+            else
+            ac *= 0.5
+            w_n2 .= w_n + ac*dc
+          end
+            end
+            w_n .= w_n2
+            break
         end
         t += 1
     end
     # Passo 5 (adaptado: atualizar direcao)
-#    println("w após broyden: ", w_n)
-    w_n .= w_n .- w
+    #    println("w após broyden: ", w_n)
+    mpc.pt.x = w_n[1:n]
+    mpc.pt.y = w_n[n+1:n+m]
+    mpc.pt.z .= w_n[n+m+1:2*n+m]
+    w_n .= w_n - w
     mpc.Δc.x .= w_n[1:n]
     mpc.Δc.y .= w_n[n+1:n+m] # talvez precise atualizar mais coisas em delta_c
 
+    if t == 30
+        return true
+    else
+        return false
+    end
 end

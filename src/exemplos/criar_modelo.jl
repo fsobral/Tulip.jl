@@ -16,6 +16,10 @@ function testar(nome, ignore = false)
         c = [0, 1., 0]
         A = [1. 2 1]
         b = [6.]
+    elseif nome == 4
+        c = [1., 1]
+        A = [5 7.; 5 -3]
+        b = [35., 10]
     else
         p = load_problem(nome)
         (c, A, b) = (p.c, p.A, p.b)
