@@ -104,6 +104,7 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max)
         #    println("||F(w_$(it))|| = ", norm(F_tau(w, sig*mu_wk)))
         update!(B, sb, -F_tau(w, sig*mu_wk))
     end
+    global nitb += it
     println("Nº de iterações de Broyden: ", it)
     return status
 end
@@ -164,10 +165,11 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
     lamb = w[n+1:n+m]
     s = w[n+m+1:2*n+m]
     J_temp = J(w)
-    println("Jac=")
-    display(J_temp)
+#    println("Jac=")
+#    display(J_temp)
 
     # correção para garantir a decomposição lu (resolve a questão da invertibilidade da matriz, mas a convergencia ainda é muito improvavel)
+    corrigiu_jac = false
     if true
     fatoracao = nothing
     mult = 1
@@ -179,16 +181,20 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
             #J_temp[(n+m+1):(2*n+m), 1:n] += (2^mult)*eps*I
             #J_temp[(n+m+1):(2*n+m), (n+m+1):(2*n+m)] += (2^mult)*eps*I
             mult += 1
+            corrigiu_jac = true
         end
     end
   else
     fatoracao = lu(J_temp)
   end
+    if corrigiu_jac == true
+        global n_corr_jac += 1
+    end
     # ----------------------------------------
 
     Jw = GoodBroyden(fatoracao, it_max)
     # Passo 1
-    d = - (J_temp \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
+    d = - (fatoracao \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
     mpc.Δ.x = d[1:n]
     mpc.Δ.y = d[n+1:n+m]
 
@@ -226,6 +232,7 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
     t = 1
 
     while true
+        global n_tent_broyden += 1
         println("Testagem: ", t)
         println("Alfa = ", alpha)
         println("Sigma = ", sig)
@@ -248,8 +255,10 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
         alpha *= 0.5
         sig = 0.5*(sig_max + sig)
         #    if abs(sig_max - sig) < 1.0e-8 # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
-        if t == 30 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
+        if t == 3 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
             #            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
+            println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
+            global n_corr_alt += 1
             an = alpha0
             w_n .= w + an*d
             while true
@@ -262,21 +271,51 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
             end
             sig_bom = ((dot(w_n[1:n], w_n[n+m+1:2*n+m])/n)/(dot(w[1:n],w[n+m+1:2*n+m])/n))^3
             println("sig_bom = ", sig_bom)
-            dc = - (J_temp \ F_tau(w_n, sig_bom*dot(w_n[1:n], w_n[n+m+1:2*n+m])/n))
-
-            ac = 1.0
-            w_n2 = w_n + dc
-            while true
-              if 0 <= dot(w_n2[1:n], w_n2[n+m+1:2*n+m])/n <= dot(w_n[1:n], w_n[n+m+1:2*n+m])/n && minimum([minimum(w_n2[1:n]), minimum(w_n2[n+m+1:2*n+m])]) > 0
-              break
-            else
-            ac *= 0.5
-            w_n2 .= w_n + ac*dc
-          end
+            tau = sig_bom*dot(w_n[1:n], w_n[n+m+1:2*n+m])/n
+            w_n2 = zeros(size(w_n)[1])
+            for k=1:5
+                try
+                dc = - (J_temp \ F_tau(w_n, tau))
+                global nitb += 1
+                ac = 1.0
+                w_n2 = w_n + dc
+                while true
+                  if 0 <= dot(w_n2[1:n], w_n2[n+m+1:2*n+m])/n <= dot(w_n[1:n], w_n[n+m+1:2*n+m])/n && minimum([minimum(w_n2[1:n]), minimum(w_n2[n+m+1:2*n+m])]) > 0
+                  break
+                else
+                ac *= 0.5
+                w_n2 .= w_n + ac*dc
             end
-            w_n .= w_n2
-            break
+                is_nan = false
+                for kk=1:length(w_n)
+                    if isnan(w_n2[kk])
+                        is_nan = true
+                        break
+                    end
+                end
+   
+                if is_nan == true
+                w_n2 .= w_n 
+                    break
+                end
+            if ac < 1.0e-8
+                w_n2 .= w_n # se ac for muito pequeno, não faça nada.
+                break
+            end
+          end
+      catch
+          w_n .= w_n2
+          break
+      end
+                yk = F_tau(w_n2, tau) - F_tau(w_n, tau)
+                sk = w_n2 - w_n
+                w_n .= w_n2
+                J_temp = J_temp + ((yk - J_temp*sk)*(sk'))/(dot(sk,sk))
         end
+            break
+
+        end
+
         t += 1
     end
     # Passo 5 (adaptado: atualizar direcao)

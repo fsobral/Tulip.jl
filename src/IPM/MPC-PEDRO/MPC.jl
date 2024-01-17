@@ -291,6 +291,10 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     TimerOutputs.reset_timer!(mpc.timer)
     tstart = time()
     mpc.niter = 0
+    global nitb = 0
+    global n_corr_alt = 0
+    global n_corr_jac = 0
+    global n_tent_broyden = 0
 
     # Print information about the problem
     if params.OutputLevel > 0
@@ -398,6 +402,10 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             display(mpc.pt.y)
             println("s=")
             display(mpc.pt.z)
+            println("Nº total de tentativas de broyden: ", n_tent_broyden)
+            println("Nº total de iterações de Broyden: ", nitb)
+            println("Nº total de correções alternativas: ", n_corr_alt)
+            println("Nº total de correções da jacobiana: ", n_corr_jac)
         catch err
 
             if isa(err, PosDefException) || isa(err, SingularException)
@@ -421,7 +429,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
         mpc.niter += 1
     end
 
-    println("Nº de iterações (algoritmo principal): ", mpc.niter + 1)
+    println("Nº de iterações (algoritmo principal): ", mpc.niter)
 
     # TODO: print message based on termination status
     params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
