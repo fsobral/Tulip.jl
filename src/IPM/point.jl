@@ -19,7 +19,6 @@ mutable struct Point{T, Tv}
      y::Tv  # Dual variables
     zl::Tv  # Lower-bound dual, zero if `l == -∞`
     zu::Tv  # Upper-bound dual, zero if `u == +∞`
-    z::Tv
 
     # HSD variables, only used with homogeneous form
     # Otherwise, one must ensure that (τ, κ) = (1, 0)
@@ -35,7 +34,7 @@ mutable struct Point{T, Tv}
         # Primal variables
         tzeros(Tv, n), tzeros(Tv, n), tzeros(Tv, n),
         # Dual variables
-        tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n), tzeros(Tv, n),
+        tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n),
         # Homogeneous variables
         one(T), one(T),
         # Centrality parameter

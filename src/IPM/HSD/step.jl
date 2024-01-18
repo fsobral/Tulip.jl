@@ -269,7 +269,7 @@ end
 
 Compute the maximum value `a ≥ 0` such that `x + a*dx ≥ 0`, where `x ≥ 0`.
 """
-function max_step_length(x::Vector{T}, dx::Vector{T}) where{T}
+function max_step_length(x::AbstractVector{T}, dx::AbstractVector{T}) where{T}
     n = size(x, 1)
     n == size(dx, 1) || throw(DimensionMismatch())
     a = T(Inf)
