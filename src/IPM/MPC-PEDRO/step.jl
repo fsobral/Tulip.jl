@@ -59,17 +59,17 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
 
   @timeit mpc.timer "Predictor" compute_predictor!(mpc::MPC)
 
-#   # Reconstruindo z e Δz
+  # Reconstruindo z e Δz
 #  z = zeros(n)
-#  dz = zeros(n)
-#   for i=1:n
-#  #   z[i] = c[i] - dot(A[:, i], pt.y)
-#     dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
-#   end
-#   z = mpc.pt.z
+  dz = zeros(n)
+  for i=1:n
+ #   z[i] = c[i] - dot(A[:, i], pt.y)
+    dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
+  end
+  z = mpc.pt.z
 
-# #  mpc.αp, mpc.αd = max_step_length_pd2(mpc.pt, Δ, z, dz) # Espaço para otimizar!
-  mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
+#  mpc.αp, mpc.αd = max_step_length_pd2(mpc.pt, Δ, z, dz) # Espaço para otimizar!
+  #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
   #    if mpc.αp <= mpc.αd
   #        mpc.αd = mpc.αp
   #    else
@@ -80,8 +80,8 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
 
   # Corrector
   corretor_qn = true
-  # cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
-  @timeit mpc.timer "Corrector" all_tests_failed = Quasi_Newton_Corrector!(mpc)
+  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
+  @timeit mpc.timer "Corrector" all_tests_failed = Quasi_Newton_Corrector!(mpc, z, dz)
   if false#all_tests_failed == true
     pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
     #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
@@ -135,16 +135,27 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
     end
   end
 
-  # Update current iterate
-  mpc.αp *= params.StepDampFactor
-  mpc.αd *= params.StepDampFactor
-  pt.x  .+= mpc.αp .* Δ.x
-  pt.xl .+= mpc.αp .* Δ.xl
-  pt.xu .+= mpc.αp .* Δ.xu
-  pt.y  .+= mpc.αd .* Δ.y
-  pt.zl .+= mpc.αd .* Δ.zl
-  pt.zu .+= mpc.αd .* Δ.zu
-  update_mu!(pt)
+  if corretor_qn == false
+    # Update current iterate
+    mpc.αp *= params.StepDampFactor
+    mpc.αd *= params.StepDampFactor
+    pt.x  .+= mpc.αp .* Δ.x
+    pt.xl .+= mpc.αp .* Δ.xl
+    pt.xu .+= mpc.αp .* Δ.xu
+    pt.y  .+= mpc.αd .* Δ.y
+    pt.zl .+= mpc.αd .* Δ.zl
+    pt.zu .+= mpc.αd .* Δ.zu
+    update_mu!(pt)
+  else
+    #nothing
+#    pt.x  .+= Δ.x
+#    pt.xl .+= Δ.xl
+#    pt.xu .+= Δ.xu
+#    pt.y  .+= Δ.y
+#    pt.zl .+= Δ.zl
+#    pt.zu .+= Δ.zu
+#    update_mu!(pt)
+  end
 
   return nothing
 end

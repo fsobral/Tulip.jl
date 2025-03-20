@@ -161,6 +161,10 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
     ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
+    println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
+    println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
+    println("μ = $(mpc.pt.μ)")
+    
     # Check for feasibility
     if ρp <= ϵp
         mpc.primal_status = Sln_FeasiblePoint
@@ -401,7 +405,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             println("lambda=")
             display(mpc.pt.y)
             println("s=")
-            display(mpc.pt.zl)
+            display(mpc.pt.z)
             println("Nº total de tentativas de broyden: ", n_tent_broyden)
             println("Nº total de iterações de Broyden: ", nitb)
             println("Nº total de correções alternativas: ", n_corr_alt)
@@ -454,15 +458,18 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
     KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
     KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
 
-    pt.x, pt.y, _ = make_feasible(A, b, c, 10.0)
-    #z = pt.z
+    pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
+    z = pt.z
     println("<< PONTO INICIAL >>")
     println("x=")
     display(pt.x)
     println("lambda=")
     display(pt.y)
     println("s=")
-    #display(pt.z)
+    display(pt.z)
+    
+    println("")
+    println("mu_0 = ", dot(pt.x, z)/n)
 
 
 
@@ -472,7 +479,7 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
     @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
     @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
 
-    z = dat.c - dat.A' * pt.y
+    #z = dat.c - dat.A' * pt.y
     #=
     We set zl, zu such that `z = zl - zu`
 
