@@ -164,7 +164,7 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
     println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
     println("μ = $(mpc.pt.μ)")
-    
+
     # Check for feasibility
     if ρp <= ϵp
         mpc.primal_status = Sln_FeasiblePoint
@@ -298,7 +298,6 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     global nitb = 0
     global n_corr_alt = 0
     global n_corr_jac = 0
-    global n_tent_broyden = 0
 
     # Print information about the problem
     if params.OutputLevel > 0
@@ -406,7 +405,6 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             display(mpc.pt.y)
             println("s=")
             display(mpc.pt.z)
-            println("Nº total de tentativas de broyden: ", n_tent_broyden)
             println("Nº total de iterações de Broyden: ", nitb)
             println("Nº total de correções alternativas: ", n_corr_alt)
             println("Nº total de correções da jacobiana: ", n_corr_jac)

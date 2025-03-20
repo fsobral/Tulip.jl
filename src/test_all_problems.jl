@@ -51,7 +51,7 @@ problemas = ["25FV47", # Ponto inicial não é viavel
 #             "STOCFOR3" , # out of memory
 #             "TRUSS"    , # Viavel mas pesado, pode ser que de certo...
              "WOOD1P"   , # Ponto inicial não é viavel
-             "WOODW" ] # Ponto inicial não é viavel # faltou memoria
+             "WOODW" ] # Ponto inicial não é viavel
 
 println("Primeiramente, inclua algum dos arquivos testar_{implementacao}.jl")
 
@@ -66,10 +66,9 @@ function test_all(ignore = false, pausas = false, skiptiny = false, skipto = 1)
             println("")
             println(" >>> Testando o problema $(i).")
             @time begin
-            global n_tent_broyden = 0 # numero de tentativas do broyden
-            global nitb = 0 # numero total de iterações de Broyden
-            global n_corr_alt = 0 # numero total de utilizações do método alternativo
-            global n_corr_jac = 0 # numero total de correções da jacobiana
+                global nitb = 0 # numero total de iterações de Broyden
+                global n_corr_alt = 0 # numero total de utilizações do método alternativo
+                global n_corr_jac = 0 # numero total de utilizações do método alternativo
                 testar(i, ignore)
             end
             println("")
@@ -83,10 +82,9 @@ function test_all(ignore = false, pausas = false, skiptiny = false, skipto = 1)
         println("")
         println(" >>> Testando o problema $(problemas[i]).")
         @time begin
-            global n_tent_broyden = 0 # numero de tentativas do broyden
             global nitb = 0 # numero total de iterações de Broyden
             global n_corr_alt = 0 # numero total de utilizações do método alternativo
-            global n_corr_jac = 0 # numero total de correções da jacobiana
+            global n_corr_jac = 0 # numero total de utilizações do método alternativo
             testar(problemas[i], ignore)
         end
         println("")

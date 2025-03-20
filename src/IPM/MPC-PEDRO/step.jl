@@ -147,7 +147,7 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
     pt.zu .+= mpc.αd .* Δ.zu
     update_mu!(pt)
   else
-    #nothing
+    nothing
 #    pt.x  .+= Δ.x
 #    pt.xl .+= Δ.xl
 #    pt.xu .+= Δ.xu

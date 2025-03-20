@@ -1,9 +1,8 @@
 module Tulip
 
-global n_tent_broyden = 0 # numero de tentativas do broyden
 global nitb = 0 # numero total de iterações de Broyden
 global n_corr_alt = 0 # numero total de utilizações do método alternativo
-global n_corr_jac = 0 # numero total de correções da jacobiana
+global n_corr_jac = 0 # numero total de utilizações do método alternativo
 using LinearAlgebra
 using Logging
 using Printf
