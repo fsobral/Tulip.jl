@@ -232,34 +232,34 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
   t = 1
 
   while true
-    println("Testagem: ", t)
-    println("Alfa = ", alpha)
+    #println("Testagem: ", t)
+    println("Alfa_max = ", alpha)
 
-    w_n .= w + alpha*d
+    #w_n .= w + alpha*d
 
-    mu_novo = dot(w_n[1:n], w_n[n+m+1:2*n+m])/n
-    sig = ((mu_novo/mu_wk)^3)*(mu_novo/mu_wk)
-    println("Sigma = ", sig)
+    #mu_novo = dot(w_n[1:n], w_n[n+m+1:2*n+m])/n
+    #sig = ((mu_novo/mu_wk)^3)*(mu_novo/mu_wk)
+    #println("Sigma = ", sig)
 
-    println("Ponto inicial do Broyden")
-    display(w_n)
+    #println("Ponto inicial do Broyden")
+    #display(w_n)
 
-    println("mu (após newton) = ", dot(w_n[1:n], w_n[n+m+1:2*n+m])/n)
+    #println("mu (após newton) = ", dot(w_n[1:n], w_n[n+m+1:2*n+m])/n)
 
-    b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
+    #b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
     Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
-    println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
-    println("Status (Broyden) = ", b_status)
-    if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
-      break
-    end
-    alpha *= 0.5
-    sig = 0.5*(sig_max + sig)
+#    println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
+#    println("Status (Broyden) = ", b_status)
+#    if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
+#      break
+#    end
+#    alpha *= 0.5
+#    sig = 0.5*(sig_max + sig)
     #    if abs(sig_max - sig) < 1.0e-8 # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
     if t == 1 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
       #            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
-      println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
+#      println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
       global n_corr_alt += 1
       an = alpha0
       w_n .= w + an*d
