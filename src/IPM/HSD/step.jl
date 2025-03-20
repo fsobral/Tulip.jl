@@ -97,11 +97,14 @@ function compute_step!(hsd::HSD{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
     )
     α = max_step_length(pt, Δ)
 
+    global nitb += 1
+
     # Extra corrections
     ncor = 0
     while ncor < params.CorrectionLimit && α < T(999 // 1000)
         α_ = α
         ncor += 1
+        global nitb += 1
 
         # Compute extra-corrector
         αc = compute_higher_corrector!(Δc,

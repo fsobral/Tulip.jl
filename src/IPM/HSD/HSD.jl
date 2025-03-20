@@ -206,6 +206,8 @@ function ipm_optimize!(hsd::HSD{T}, params::IPMOptions{T}) where{T}
     dat = hsd.dat
 
     # Initialization
+    println(">>>>>>> HSD <<<<<<<<")
+    global nitb = 0
     TimerOutputs.reset_timer!(hsd.timer)
     tstart = time()
     hsd.niter = 0
@@ -245,6 +247,16 @@ function ipm_optimize!(hsd::HSD{T}, params::IPMOptions{T}) where{T}
 
     hsd.pt.τ   = one(T)
     hsd.pt.κ   = one(T)
+
+hsd.pt.x, hsd.pt.y, hsd.pt.z = make_feasible(hsd.dat.A, hsd.dat.b, hsd.dat.c, 10.0)
+    z = hsd.pt.z
+    println("<< PONTO INICIAL >>")
+    println("x=")
+    display(hsd.pt.x)
+    println("lambda=")
+    display(hsd.pt.y)
+    println("s=")
+    display(hsd.pt.z)
 
     update_mu!(hsd.pt)
 
@@ -312,6 +324,8 @@ function ipm_optimize!(hsd::HSD{T}, params::IPMOptions{T}) where{T}
             break
         end
 
+        println("Iteração atual: ", hsd.niter + 1)
+        println("Nº total de correções: ", nitb)
 
         # TODO: step
         # For now, include the factorization in the step function
@@ -337,7 +351,7 @@ function ipm_optimize!(hsd::HSD{T}, params::IPMOptions{T}) where{T}
 
             break
         end
-
+        println("Mu após o passo: ", hsd.pt.μ)
         hsd.niter += 1
 
     end

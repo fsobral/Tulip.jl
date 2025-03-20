@@ -161,10 +161,6 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
     ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
-    println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
-    println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
-    println("μ = $(mpc.pt.μ)")
-
     # Check for feasibility
     if ρp <= ϵp
         mpc.primal_status = Sln_FeasiblePoint
@@ -296,8 +292,6 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     tstart = time()
     mpc.niter = 0
     global nitb = 0
-    global n_corr_alt = 0
-    global n_corr_jac = 0
 
     # Print information about the problem
     if params.OutputLevel > 0
@@ -370,7 +364,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
         # In particular, user limits should be checked last (if an optimal solution is found,
         # we want to report optimal, not user limits)
 
-        @timeit mpc.timer "update status" update_solver_status!(mpc,
+        @timeit mpc.timer "update status" update_solver_status2!(mpc,
                                                                  params.TolerancePFeas,
                                                                  params.ToleranceDFeas,
                                                                  params.ToleranceRGap,
@@ -406,8 +400,6 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             println("s=")
             display(mpc.pt.z)
             println("Nº total de iterações de Broyden: ", nitb)
-            println("Nº total de correções alternativas: ", n_corr_alt)
-            println("Nº total de correções da jacobiana: ", n_corr_jac)
         catch err
 
             if isa(err, PosDefException) || isa(err, SingularException)
@@ -431,7 +423,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
         mpc.niter += 1
     end
 
-    println("Nº de iterações (algoritmo principal): ", mpc.niter)
+    println("Nº de iterações (algoritmo principal): ", mpc.niter + 1)
 
     # TODO: print message based on termination status
     params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
@@ -465,9 +457,6 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
     display(pt.y)
     println("s=")
     display(pt.z)
-    
-    println("")
-    println("mu_0 = ", dot(pt.x, z)/n)
 
 
 

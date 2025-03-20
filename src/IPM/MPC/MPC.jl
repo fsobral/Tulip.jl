@@ -161,6 +161,10 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
     ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
+    println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
+    println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
+    println("μ = $(mpc.pt.μ)")
+
     # Check for feasibility
     if ρp <= ϵp
         mpc.primal_status = Sln_FeasiblePoint
@@ -221,9 +225,11 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     dat = mpc.dat
 
     # Initialization
+    println(">>>>>>> MPC <<<<<<<<")
     TimerOutputs.reset_timer!(mpc.timer)
     tstart = time()
     mpc.niter = 0
+    global nitb = 0
 
     # Print information about the problem
     if params.OutputLevel > 0
@@ -250,7 +256,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     end
 
     # Set starting point
-    @timeit mpc.timer "Initial point" compute_starting_point(mpc)
+    @timeit mpc.timer "Initial point" compute_starting_point2(mpc)
 
     # Main loop
     # Iteration 0 corresponds to the starting point.
@@ -316,12 +322,15 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             break
         end
 
+        println("Iteração atual: ", mpc.niter + 1)
 
         # TODO: step
         # For now, include the factorization in the step function
         # Q: should we use more arguments here?
         try
             @timeit mpc.timer "Step" compute_step!(mpc, params)
+            println("Número total de correções: ", nitb)
+            println("Mu após o passo = ", mpc.pt.μ)
         catch err
 
             if isa(err, PosDefException) || isa(err, SingularException)
@@ -348,6 +357,80 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
 
     return nothing
+end
+
+function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um ponto inicial proximo do caminho central
+
+    # Names
+    dat = mpc.dat
+    pt = mpc.pt
+    m, n, p = pt.m, pt.n, pt.p
+
+    A = dat.A
+    b = dat.b
+    c = dat.c
+
+    KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
+
+    # Get initial iterate
+    KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
+    KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
+
+    pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
+    z = pt.z
+    println("<< PONTO INICIAL >>")
+    println("x=")
+    display(pt.x)
+    println("lambda=")
+    display(pt.y)
+    println("s=")
+    display(pt.z)
+
+
+
+    #    println("Ponto inicial: ", (pt.x, pt.y, z))
+
+    δx = zeros(T)
+    @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
+    @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
+
+    #z = dat.c - dat.A' * pt.y
+    #=
+    We set zl, zu such that `z = zl - zu`
+
+    lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
+    ----+-----+--------+---------+
+    yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
+    yes |  no |     zⱼ |      0  |
+    no | yes |     0  |     -zⱼ |
+    no |  no |     0  |      0  |
+    ----+-----+--------+---------+
+    =#
+    @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
+    @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
+
+    δz = zeros(T)
+
+    pt.zl[dat.lflag] .+= δz
+    pt.zu[dat.uflag] .+= δz
+
+    mpc.pt.τ   = one(T)
+    mpc.pt.κ   = zero(T)
+
+    # II. Balance complementarity products
+    μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
+    dx = 0*μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
+    dz = 0*μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
+
+    pt.xl[dat.lflag] .+= dx
+    pt.xu[dat.uflag] .+= dx
+    pt.zl[dat.lflag] .+= dz
+    pt.zu[dat.uflag] .+= dz
+
+    # Update centrality parameter
+    update_mu!(mpc.pt)
+
+
 end
 
 function compute_starting_point(mpc::MPC{T}) where{T}

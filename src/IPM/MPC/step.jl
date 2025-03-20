@@ -62,6 +62,7 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
 
     # Corrector
     @timeit mpc.timer "Corrector" compute_corrector!(mpc::MPC)
+    global nitb += 1
     mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δc)
     # TODO: the following is not needed if there are no additional corrections
     copyto!(Δ.x, Δc.x)
@@ -102,6 +103,7 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
             copyto!(Δ.zu, Δc.zu)
 
             ncor += 1
+            global nitb += 1
         else
             # Not enough improvement: abort
             break

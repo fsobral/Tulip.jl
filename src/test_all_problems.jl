@@ -17,10 +17,10 @@ problemas = ["25FV47", # Ponto inicial não é viavel
              "FFFFF800" , # Ponto inicial não é viavel (percebi o problema com o ponto inicial testando esse)
              "ISRAEL"   , # Ponto inicial não é viavel
              "LOTFI"    , # Ponto inicial não é viavel
-#             "MAROS-R7" , # viavel ### este deu problema de falta de memória em um dos testes
+             "MAROS-R7" , # viavel
              "QAP8"     , # ponto viável, mas ocorre singular exception
-#             "QAP12"    , # viavel (embora dê singular exception) ##### falta de memoria
-#                 "QAP15"    , # esse problema é pesado demais e provoca a morte do processo por falta de memoria
+             "QAP12"    , # viavel (embora dê singular exception)
+                 "QAP15"    , # esse problema é pesado demais e provoca a morte do processo por falta de memoria
              "SC105"    , # Ponto inicial não é viavel
              "SC205"    , # Ponto inicial não é viavel
              "SC50A"    ,# Ponto inicial não é viavel
@@ -48,8 +48,8 @@ problemas = ["25FV47", # Ponto inicial não é viavel
              "SHIP12S"  , # Ponto inicial não é viavel
              "STOCFOR1" , # viavel
              "STOCFOR2" , # viavel
-#             "STOCFOR3" , # out of memory
-#             "TRUSS"    , # Viavel mas pesado, pode ser que de certo...
+             "STOCFOR3" , # out of memory
+             "TRUSS"    , # Viavel mas pesado, pode ser que de certo...
              "WOOD1P"   , # Ponto inicial não é viavel
              "WOODW" ] # Ponto inicial não é viavel
 
@@ -66,9 +66,7 @@ function test_all(ignore = false, pausas = false, skiptiny = false, skipto = 1)
             println("")
             println(" >>> Testando o problema $(i).")
             @time begin
-                global nitb = 0 # numero total de iterações de Broyden
-                global n_corr_alt = 0 # numero total de utilizações do método alternativo
-                global n_corr_jac = 0 # numero total de utilizações do método alternativo
+                global nitb = 0
                 testar(i, ignore)
             end
             println("")
@@ -82,9 +80,7 @@ function test_all(ignore = false, pausas = false, skiptiny = false, skipto = 1)
         println("")
         println(" >>> Testando o problema $(problemas[i]).")
         @time begin
-            global nitb = 0 # numero total de iterações de Broyden
-            global n_corr_alt = 0 # numero total de utilizações do método alternativo
-            global n_corr_jac = 0 # numero total de utilizações do método alternativo
+            global nitb = 0
             testar(problemas[i], ignore)
         end
         println("")
