@@ -22,7 +22,7 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
     timer::TimerOutput
 
     #=====================
-        Working memory
+    Working memory
     =====================#
     pt::Point{T, Tv}       # Current primal-dual iterate
     res::Residuals{T, Tv}  # Residuals at current iterate
@@ -48,8 +48,8 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
     regD::Tv  # Dual regularization
 
     function MPC(
-        dat::IPMData{T, Tv, Tb, Ta}, kkt_options::KKTOptions{T}
-    ) where{T, Tv<:AbstractVector{T}, Tb<:AbstractVector{Bool}, Ta<:AbstractMatrix{T}}
+            dat::IPMData{T, Tv, Tb, Ta}, kkt_options::KKTOptions{T}
+        ) where{T, Tv<:AbstractVector{T}, Tb<:AbstractVector{Bool}, Ta<:AbstractMatrix{T}}
 
         m, n = dat.nrow, dat.ncol
         p = sum(dat.lflag) + sum(dat.uflag)
@@ -57,10 +57,10 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
         # Working memory
         pt  = Point{T, Tv}(m, n, p, hflag=false)
         res = Residuals(
-            tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n),
-            tzeros(Tv, n), zero(T),
-            zero(T), zero(T), zero(T), zero(T), zero(T)
-        )
+                        tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n),
+                        tzeros(Tv, n), zero(T),
+                        zero(T), zero(T), zero(T), zero(T), zero(T)
+                       )
         Δ  = Point{T, Tv}(m, n, p, hflag=false)
         Δc = Point{T, Tv}(m, n, p, hflag=false)
 
@@ -80,13 +80,13 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
         Tk = typeof(kkt)
 
         return new{T, Tv, Tb, Ta, Tk}(dat,
-            0, Trm_Unknown, Sln_Unknown, Sln_Unknown,
-            T(Inf), T(-Inf),
-            TimerOutput(),
-            pt, res, Δ, Δc, zero(T), zero(T),
-            ξp, ξl, ξu, ξd, ξxzl, ξxzu,
-            kkt, regP, regD
-        )
+                                      0, Trm_Unknown, Sln_Unknown, Sln_Unknown,
+                                      T(Inf), T(-Inf),
+                                      TimerOutput(),
+                                      pt, res, Δ, Δc, zero(T), zero(T),
+                                      ξp, ξl, ξu, ξd, ξxzl, ξxzu,
+                                      kkt, regP, regD
+                                     )
     end
 
 end
@@ -133,10 +133,10 @@ function compute_residuals!(mpc::MPC{T}) where{T}
     # Compute primal and dual bounds
     mpc.primal_objective = dot(dat.c, pt.x) + dat.c0
     mpc.dual_objective   = (
-        dot(dat.b, pt.y)
-        + dot(dat.l .* dat.lflag, pt.zl)
-        - dot(dat.u .* dat.uflag, pt.zu)
-    ) + dat.c0
+                            dot(dat.b, pt.y)
+                            + dot(dat.l .* dat.lflag, pt.zl)
+                            - dot(dat.u .* dat.uflag, pt.zu)
+                           ) + dat.c0
 
     return nothing
 end
@@ -154,13 +154,17 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     dat = mpc.dat
 
     ρp = max(
-        res.rp_nrm / (one(T) + norm(dat.b, Inf)),
-        res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
-        res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
-    )
+             res.rp_nrm / (one(T) + norm(dat.b, Inf)),
+             res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
+             res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
+            )
     ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
     ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
+    println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
+    println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
+    println("μ = $(mpc.pt.μ)")
+    
     # Check for feasibility
     if ρp <= ϵp
         mpc.primal_status = Sln_FeasiblePoint
@@ -185,10 +189,10 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     # TODO: Primal/Dual infeasibility detection
     # Check for infeasibility certificates
     if max(
-        norm(dat.A * pt.x, Inf),
-        norm((pt.x .- pt.xl) .* dat.lflag, Inf),
-        norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
-    ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
+           norm(dat.A * pt.x, Inf),
+           norm((pt.x .- pt.xl) .* dat.lflag, Inf),
+           norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
+          ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
         # Dual infeasible, i.e., primal unbounded
         mpc.primal_status = Sln_InfeasibilityCertificate
         mpc.solver_status = Trm_DualInfeasible
@@ -197,10 +201,77 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
 
     δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
     if norm(δ, Inf) * max(
-        norm(dat.l .* dat.lflag, Inf),
-        norm(dat.u .* dat.uflag, Inf),
-        norm(dat.b, Inf)
-    ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
+                          norm(dat.l .* dat.lflag, Inf),
+                          norm(dat.u .* dat.uflag, Inf),
+                          norm(dat.b, Inf)
+                         ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
+        # Primal infeasible
+        mpc.dual_status = Sln_InfeasibilityCertificate
+        mpc.solver_status = Trm_PrimalInfeasible
+        return nothing
+    end
+
+    return nothing
+end
+
+function update_solver_status2!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
+    mpc.solver_status = Trm_Unknown
+
+    pt, res = mpc.pt, mpc.res
+    dat = mpc.dat
+
+    ρp = max(
+             res.rp_nrm / (one(T) + norm(dat.b, Inf)),
+             res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
+             res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
+            )
+    ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
+    ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
+
+    # Check for feasibility
+    if ρp <= ϵp
+        mpc.primal_status = Sln_FeasiblePoint
+    else
+        mpc.primal_status = Sln_Unknown
+    end
+
+    if ρd <= ϵd
+        mpc.dual_status = Sln_FeasiblePoint
+    else
+        mpc.dual_status = Sln_Unknown
+    end
+
+    # Check for optimal solution
+
+    z = pt.z#mpc.dat.c - mpc.dat.A'*pt.y
+    println("mu = ", abs(dot(pt.x, z))/length(z))
+    menor_entrada = minimum([minimum(pt.x), minimum(z)])
+    if  abs(dot(pt.x, z)) <= 1.0e-8*length(z) && menor_entrada > -1.0e-4# parar quando mu zerar
+        mpc.primal_status = Sln_Optimal
+        mpc.dual_status   = Sln_Optimal
+        mpc.solver_status = Trm_Optimal
+        return nothing
+    end
+
+    # TODO: Primal/Dual infeasibility detection
+    # Check for infeasibility certificates
+    if max(
+           norm(dat.A * pt.x, Inf),
+           norm((pt.x .- pt.xl) .* dat.lflag, Inf),
+           norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
+          ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
+        # Dual infeasible, i.e., primal unbounded
+        mpc.primal_status = Sln_InfeasibilityCertificate
+        mpc.solver_status = Trm_DualInfeasible
+        return nothing
+    end
+
+    δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
+    if norm(δ, Inf) * max(
+                          norm(dat.l .* dat.lflag, Inf),
+                          norm(dat.u .* dat.uflag, Inf),
+                          norm(dat.b, Inf)
+                         ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
         # Primal infeasible
         mpc.dual_status = Sln_InfeasibilityCertificate
         mpc.solver_status = Trm_PrimalInfeasible
@@ -224,6 +295,10 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     TimerOutputs.reset_timer!(mpc.timer)
     tstart = time()
     mpc.niter = 0
+    global nitb = 0
+    global n_corr_alt = 0
+    global n_corr_jac = 0
+    global n_tent_broyden = 0
 
     # Print information about the problem
     if params.OutputLevel > 0
@@ -250,7 +325,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     end
 
     # Set starting point
-    @timeit mpc.timer "Initial point" compute_starting_point(mpc)
+    @timeit mpc.timer "Initial point" compute_starting_point2(mpc)
 
     # Main loop
     # Iteration 0 corresponds to the starting point.
@@ -295,18 +370,19 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
         #   followed by a check on the solver status to determine whether to stop
         # In particular, user limits should be checked last (if an optimal solution is found,
         # we want to report optimal, not user limits)
+
         @timeit mpc.timer "update status" update_solver_status!(mpc,
-            params.TolerancePFeas,
-            params.ToleranceDFeas,
-            params.ToleranceRGap,
-            params.ToleranceIFeas
-        )
+                                                                 params.TolerancePFeas,
+                                                                 params.ToleranceDFeas,
+                                                                 params.ToleranceRGap,
+                                                                 params.ToleranceIFeas
+                                                                )
 
         if (
             mpc.solver_status == Trm_Optimal
             || mpc.solver_status == Trm_PrimalInfeasible
             || mpc.solver_status == Trm_DualInfeasible
-        )
+           )
             break
         elseif mpc.niter >= params.IterationsLimit
             mpc.solver_status = Trm_IterationLimit
@@ -316,12 +392,24 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             break
         end
 
+        println("")
+        println("⚠️ Iteração (algoritmo principal): ", mpc.niter + 1)
 
         # TODO: step
         # For now, include the factorization in the step function
         # Q: should we use more arguments here?
         try
             @timeit mpc.timer "Step" compute_step!(mpc, params)
+            println("x=")
+            display(mpc.pt.x)
+            println("lambda=")
+            display(mpc.pt.y)
+            println("s=")
+            display(mpc.pt.z)
+            println("Nº total de tentativas de broyden: ", n_tent_broyden)
+            println("Nº total de iterações de Broyden: ", nitb)
+            println("Nº total de correções alternativas: ", n_corr_alt)
+            println("Nº total de correções da jacobiana: ", n_corr_jac)
         catch err
 
             if isa(err, PosDefException) || isa(err, SingularException)
@@ -339,15 +427,95 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
                 rethrow(err)
             end
 
+            rethrow(err)
             break
         end
         mpc.niter += 1
     end
 
+    println("Nº de iterações (algoritmo principal): ", mpc.niter)
+
     # TODO: print message based on termination status
     params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
 
     return nothing
+end
+
+function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um ponto inicial proximo do caminho central
+
+    # Names
+    dat = mpc.dat
+    pt = mpc.pt
+    m, n, p = pt.m, pt.n, pt.p
+
+    A = dat.A
+    b = dat.b
+    c = dat.c
+
+    KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
+
+    # Get initial iterate
+    KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
+    KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
+
+    pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
+    z = pt.z
+    println("<< PONTO INICIAL >>")
+    println("x=")
+    display(pt.x)
+    println("lambda=")
+    display(pt.y)
+    println("s=")
+    display(pt.z)
+    
+    println("")
+    println("mu_0 = ", dot(pt.x, z)/n)
+
+
+
+    #    println("Ponto inicial: ", (pt.x, pt.y, z))
+
+    δx = zeros(T)
+    @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
+    @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
+
+    #z = dat.c - dat.A' * pt.y
+    #=
+    We set zl, zu such that `z = zl - zu`
+
+    lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
+    ----+-----+--------+---------+
+    yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
+    yes |  no |     zⱼ |      0  |
+    no | yes |     0  |     -zⱼ |
+    no |  no |     0  |      0  |
+    ----+-----+--------+---------+
+    =#
+    @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
+    @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
+
+    δz = zeros(T)
+
+    pt.zl[dat.lflag] .+= δz
+    pt.zu[dat.uflag] .+= δz
+
+    mpc.pt.τ   = one(T)
+    mpc.pt.κ   = zero(T)
+
+    # II. Balance complementarity products
+    μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
+    dx = 0*μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
+    dz = 0*μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
+
+    pt.xl[dat.lflag] .+= dx
+    pt.xu[dat.uflag] .+= dx
+    pt.zl[dat.lflag] .+= dz
+    pt.zu[dat.uflag] .+= dz
+
+    # Update centrality parameter
+    update_mu!(mpc.pt)
+
+
 end
 
 function compute_starting_point(mpc::MPC{T}) where{T}
@@ -364,24 +532,24 @@ function compute_starting_point(mpc::MPC{T}) where{T}
 
     # I. Recover positive primal-dual coordinates
     δx = one(T) + max(
-        zero(T),
-        (-3 // 2) * minimum((pt.x .- dat.l) .* dat.lflag),
-        (-3 // 2) * minimum((dat.u .- pt.x) .* dat.uflag)
-    )
+                      zero(T),
+                      (-3 // 2) * minimum((pt.x .- dat.l) .* dat.lflag),
+                      (-3 // 2) * minimum((dat.u .- pt.x) .* dat.uflag)
+                     )
     @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
     @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
 
     z = dat.c - dat.A' * pt.y
     #=
-        We set zl, zu such that `z = zl - zu`
+    We set zl, zu such that `z = zl - zu`
 
-         lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
-        ----+-----+--------+---------+
-        yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
-        yes |  no |     zⱼ |      0  |
-         no | yes |     0  |     -zⱼ |
-         no |  no |     0  |      0  |
-        ----+-----+--------+---------+
+    lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
+    ----+-----+--------+---------+
+    yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
+    yes |  no |     zⱼ |      0  |
+    no | yes |     0  |     -zⱼ |
+    no |  no |     0  |      0  |
+    ----+-----+--------+---------+
     =#
     @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
     @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
