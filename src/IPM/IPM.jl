@@ -25,4 +25,4 @@ Run the interior-point optimizer of `ipm`.
 function ipm_optimize! end
 
 include("HSD/HSD.jl")
-include("MPC-PEDRO/MPC.jl")
+include("MPC/MPC.jl")
