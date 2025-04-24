@@ -172,7 +172,8 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
     end
     alpha = max(minimum(v), 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma 90% desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
     # Passo 3
-    sig = 0.5*sig_max
+    # sig = 0.5*sig_max
+    sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
     # Passo 4
     mu_wk = dot(x, s)/n
     w_n = zeros(2*n+m)
@@ -200,7 +201,8 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
             break
         end
         alpha *= 0.5
-        sig = 0.5*(sig_max + sig)
+        sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
+        #sig = 0.5*(sig_max + sig)
         if abs(sig_max - sig) < eps # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
             status = false
             break
