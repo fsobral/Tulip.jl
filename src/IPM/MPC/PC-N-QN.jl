@@ -162,12 +162,13 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
     ds = d[n+m+1:2*n+m]
     # Passo 2
     v = [1.]
+    pctg = 0.99
     for i=1:n
         if dx[i] < 0
-            v = vcat(v, -0.9*x[i]/dx[i] )
+            v = vcat(v, -pctg*x[i]/dx[i] )
         end
         if ds[i] < 0
-            v = vcat(v, -0.9*s[i]/ds[i] )
+            v = vcat(v, -pctg*s[i]/ds[i] )
         end
     end
     alpha = max(minimum(v), 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma 90% desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
