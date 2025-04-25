@@ -61,12 +61,17 @@ LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin # WARNING: Essa função começa 
     println("⏰ Tempo para resolver um sistema envolvendo B_0:")
     @time ldiv!(A.lu, b)
     println("")
-    println("⏰ Tempo dedicado a resolver o sistema original e determinar valores atualizados (Broyden)")
+    println("⏰ Tempo dedicado a resolver o sistema original (Broyden)")
+    u = nothing
+    sb = nothing
+    rho = nothing
     @time for i = 1:A.size[]
-        u = A.u[i]
-        sb = A.sb[i]
+      u = A.u[i] # Sem intenção de fazer cópias
+      sb = A.sb[i] # Sem intenção de fazer cópias
         rho = A.rho[i]
-        b .= b + (dot(sb, b) / rho) * u
+        rho = dot(sb, b) / rho
+#        b .= b + (dot(sb, b) / rho) * u
+        b .= b + rho * u
 
     end
     println("")
@@ -152,13 +157,26 @@ end
 
 function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
     status = true
-    x = w[1:n]
-    lamb = w[n+1:n+m]
-    s = w[n+m+1:2*n+m]
-    Jw = lu(J(w) + 1.0e-8*I)
-    println("⏰ Tempo para fatorar Jw:")
-    @time Jw = GoodBroyden(Jw, it_max)
+    x = view(w[1:n], :) # Não cria uma cópia do vetor na memória (ou pelo menos não deveria)
+    lamb = view(w[n+1:n+m], :) # Sem cópia
+    s = view(w[n+m+1:2*n+m], :) # Sem cópia
+    Jw = J(w)
+    println("⏰ Tempo para fatorar Jw (inclui o tempo que passa tentando corrigir a jacobiana até ser possível fatorar):")
+    @time begin
+    is_invertible=false
+    while is_invertible==false
+    try
+    Jw = lu(Jw)
+    is_invertible=true
+  catch
+        for i=1:2*n+m # Soma 1.0e-8*I em Jw para tentar fazer Jw se tornar inversivel
+      Jw[i, i] += 1.0e-8
+    end
+  end
+  end
+end
     println("")
+    Jw = GoodBroyden(Jw, it_max)
 
     d = -F_tau(w, 0) # F em sigma_k mu_k com sigma_k = 0.
 
@@ -166,8 +184,8 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
     println("⏰ Tempo para encontrar d (direção de Newton):")
     @time ldiv!(Jw, d)
     println("")
-    dx = d[1:n]
-    ds = d[n+m+1:2*n+m]
+    dx = view(d[1:n], :) # Sem cópia
+    ds = view(d[n+m+1:2*n+m], :) # Sem cópia
     # Passo 2
     println("⏰ Tempo para encontrar alpha para o passo de Newton:")
     @time begin
@@ -248,20 +266,37 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
     F_tau(w, tau) = begin # TODO: A função F_tau é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
       println("⏰ Tempo para calcular F_tau:")
       @time begin
-        x = w[1:n]
-        lamb = w[n+1:n+m]
-        s = w[n+m+1:2*n+m]
+        x = view(w[1:n], :) # Sem cópias
+        lamb = view(w[n+1:n+m], :) # Sem cópias
+        s = view(w[n+m+1:2*n+m], :) # Sem cópias
         v = zeros(2*n+m)
 
-        rc = v[1:n]
-        rb = v[n+1:n+m]
-        r_mu = v[n+m+1:2*n+m]
+#        rc = v[1:n]
+#        rb = v[n+1:n+m]
+#        r_mu = v[n+m+1:2*n+m]
+        prod = nothing
         for i=1:n
-            v[i] = dot(A[:, i], lamb) + s[i] - c[i]
-            v[n+m+i] = x[i]*s[i] - tau
+#            v[i] = dot(A[:, i], lamb) + s[i] - c[i]
+            for j=1:m # Calcula o produto linha-coluna de A^T lambda
+              prod = A[j, i]
+              prod *= lamb[j]
+              v[i] += prod
+            end
+            v[i] += s[i]
+            v[i] -= c[i]
+            prod = x[i]
+            prod *= s[i]
+            v[n+m+i] += prod
+            v[n+m+i] -= tau
         end
         for i=1:m
-            v[n+i] = dot(A[i, :], x) - b[i]
+#            v[n+i] = dot(A[i, :], x) - b[i]
+             for j=1:n # Calcula o produto linha-coluna de A x
+              prod = A[i, j]
+              prod *= x[j]
+              v[n+i] += prod
+            end
+            v[n+i] -= b[i]
         end
       end
       println("")
