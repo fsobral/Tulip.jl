@@ -151,7 +151,6 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
     x = w[1:n]
     lamb = w[n+1:n+m]
     s = w[n+m+1:2*n+m]
-
     Jw = GoodBroyden(lu(J(w) + 1.0e-8*I), it_max)
     d = -F_tau(w, 0) # F em sigma_k mu_k com sigma_k = 0.
 
@@ -255,12 +254,30 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
     J(w) = begin
         x = w[1:n]
         s = w[n+m+1:2*n+m]
-        M = zeros(2*n+m, 2*n+m)
-        M[1:n, n+1:n+m] = A'
-        M[1:n, n+m+1:2*n+m] = I(n)
-        M[n+1:n+m, 1:n] = A
-        M[n+m+1:2*n+m, 1:n] = diagm(s)
-        M[n+m+1:2*n+m, n+m+1:2*n+m] = diagm(x)
+        M = spzeros(2*n+m, 2*n+m) # Cria uma matriz de zeros, mas sem armazenar zeros
+#        M[1:n, n+1:n+m] = A'
+#        M[1:n, n+m+1:2*n+m] = I(n)
+#        M[n+1:n+m, 1:n] = A
+#        M[n+m+1:2*n+m, 1:n] = diagm(s)
+#        M[n+m+1:2*n+m, n+m+1:2*n+m] = diagm(x)
+        for i=1:m # Esse for preenche as matrizes A e A'
+          for j=1:n
+            if abs(A[i, j]) > 1.0e-8
+              M[j, n+i] = A[i, j]
+              M[n+i, j] = A[i, j]
+            end
+          end
+        end
+        for j=1:n # Esse for preenche a identidade I, e as matrizes diagonais X e S
+          M[j, n+m+j] = 1.0
+          if s[j] > 1.0e-8
+            M[n+m+j, j] = s[j]
+          end
+          if x[j] > 1.0e-8
+            M[n+m+j, n+m+j] = x[j]
+          end
+        end
+        dropzeros!(M) # Remove quaisquer zeros remanescentes na memória
         return M
         #    return vcat(hcat(zeros(n, n), A', I),
         #             hcat(A, zeros(m, m+n)),
