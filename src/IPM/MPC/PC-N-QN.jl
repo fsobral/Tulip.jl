@@ -62,16 +62,29 @@ LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin # WARNING: Essa função começa 
     @time ldiv!(A.lu, b)
     println("")
     println("⏰ Tempo dedicado a resolver o sistema original (Broyden)")
+    m = A.size[]
     u = nothing
     sb = nothing
     rho = nothing
-    @time for i = 1:A.size[]
+    prod = nothing
+    @time for i = 1:m
       u = A.u[i] # Sem intenção de fazer cópias
       sb = A.sb[i] # Sem intenção de fazer cópias
-        rho = A.rho[i]
-        rho = dot(sb, b) / rho
+#        rho = A.rho[i]
+        rho = 0
+        for j=1:m # produto interno dot(sb, b)
+          prod = sb[j]
+          prod *= b[j]
+          rho += prod
+        end
+        rho /= A.rho[i]
+
+#        rho = dot(sb, b) / rho
 #        b .= b + (dot(sb, b) / rho) * u
-        b .= b + rho * u
+#        b .= b + rho * u
+        for j=1:m
+          b[j] = b[j] + rho * u[j]
+        end
 
     end
     println("")
@@ -310,8 +323,8 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
     J(w) = begin # TODO: A função J é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
       println("⏰ Tempo para calcular J:")
       @time begin
-        x = w[1:n]
-        s = w[n+m+1:2*n+m]
+        x = view(w[1:n], :) # Sem cópias
+        s = view(w[n+m+1:2*n+m], :) # Sem cópias
         M = spzeros(2*n+m, 2*n+m) # Cria uma matriz de zeros, mas sem armazenar zeros
 #        M[1:n, n+1:n+m] = A'
 #        M[1:n, n+m+1:2*n+m] = I(n)
@@ -328,14 +341,14 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
         end
         for j=1:n # Esse for preenche a identidade I, e as matrizes diagonais X e S
           M[j, n+m+j] = 1.0
-          if s[j] > 1.0e-8
+          if abs(s[j]) > 1.0e-8 # TODO: Remover o abs (coloquei somente como salvaguarda para erros numéricos, mas s teoricamente já deveria ser positivo)
             M[n+m+j, j] = s[j]
           end
-          if x[j] > 1.0e-8
+          if abs(x[j]) > 1.0e-8 # TODO: Remover o abs
             M[n+m+j, n+m+j] = x[j]
           end
         end
-        dropzeros!(M) # Remove quaisquer zeros remanescentes na memória
+#        dropzeros!(M) # Remove quaisquer zeros remanescentes na memória
       end
       println("")
         return M
