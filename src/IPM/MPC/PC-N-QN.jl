@@ -55,17 +55,21 @@ end
 
 Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden update.
 """
-LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin
+LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
 
     # Resolve o caso base
-    ldiv!(A.lu, b)
-    for i = 1:A.size[]
+    println("⏰ Tempo para resolver um sistema envolvendo B_0:")
+    @time ldiv!(A.lu, b)
+    println("")
+    println("⏰ Tempo dedicado a resolver o sistema original e determinar valores atualizados (Broyden)")
+    @time for i = 1:A.size[]
         u = A.u[i]
         sb = A.sb[i]
         rho = A.rho[i]
         b .= b + (dot(sb, b) / rho) * u
 
     end
+    println("")
 
     nothing
 
@@ -151,29 +155,40 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
     x = w[1:n]
     lamb = w[n+1:n+m]
     s = w[n+m+1:2*n+m]
-    Jw = GoodBroyden(lu(J(w) + 1.0e-8*I), it_max)
+    Jw = lu(J(w) + 1.0e-8*I)
+    println("⏰ Tempo para fatorar Jw:")
+    @time Jw = GoodBroyden(Jw, it_max)
+    println("")
+
     d = -F_tau(w, 0) # F em sigma_k mu_k com sigma_k = 0.
 
     # Passo 1
-    ldiv!(Jw, d)
-
+    println("⏰ Tempo para encontrar d (direção de Newton):")
+    @time ldiv!(Jw, d)
+    println("")
     dx = d[1:n]
     ds = d[n+m+1:2*n+m]
     # Passo 2
-    v = [1.]
+    println("⏰ Tempo para encontrar alpha para o passo de Newton:")
+    @time begin
     pctg = 0.99
+    alpha = 1.0
     for i=1:n
         if dx[i] < 0
-            v = vcat(v, -pctg*x[i]/dx[i] )
+          alpha = min(-pctg*x[i]/dx[i], 1.0)
         end
         if ds[i] < 0
-            v = vcat(v, -pctg*s[i]/ds[i] )
+          alpha = min(-pctg*s[i]/ds[i], 1.0)
         end
     end
-    alpha = max(minimum(v), 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma 90% desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
+    alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma 90% desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
+  end
+  println("")
     # Passo 3
+    println("⏰ Tempo gasto para encontrar sigma para o passo corretor:")
     # sig = 0.5*sig_max
     sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
+    println("")
     # Passo 4
     mu_wk = dot(x, s)/n
     w_n = zeros(2*n+m)
@@ -200,9 +215,11 @@ function iteracao(F_tau, J, w, it_max, eps, sig_max, m, n)
         if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
             break
         end
+        println("⏰ Tempo para recalcular alpha e sigma:")
         alpha *= 0.5
         sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
         #sig = 0.5*(sig_max + sig)
+        println("")
         if abs(sig_max - sig) < eps # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
             status = false
             break
@@ -228,7 +245,9 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
     end
 
 
-    F_tau(w, tau) = begin
+    F_tau(w, tau) = begin # TODO: A função F_tau é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
+      println("⏰ Tempo para calcular F_tau:")
+      @time begin
         x = w[1:n]
         lamb = w[n+1:n+m]
         s = w[n+m+1:2*n+m]
@@ -244,6 +263,8 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
         for i=1:m
             v[n+i] = dot(A[i, :], x) - b[i]
         end
+      end
+      println("")
         return v    
 
         #    if tau == 0
@@ -251,7 +272,9 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
         #    end
         #    return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n) - tau*ones(n))
     end
-    J(w) = begin
+    J(w) = begin # TODO: A função J é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
+      println("⏰ Tempo para calcular J:")
+      @time begin
         x = w[1:n]
         s = w[n+m+1:2*n+m]
         M = spzeros(2*n+m, 2*n+m) # Cria uma matriz de zeros, mas sem armazenar zeros
@@ -278,6 +301,8 @@ function PC_NQN(c, A, b, w, sig_max = 1-1.0e-4, eps=1.0e-8, it_max1=1000, it_max
           end
         end
         dropzeros!(M) # Remove quaisquer zeros remanescentes na memória
+      end
+      println("")
         return M
         #    return vcat(hcat(zeros(n, n), A', I),
         #             hcat(A, zeros(m, m+n)),
