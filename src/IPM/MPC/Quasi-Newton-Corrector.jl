@@ -414,7 +414,6 @@ end
     pctg = 0.99
     alpha = 1.0
     for i=1:n
-      aerr = 1.0#x[i] + s[i]
         if dx[i] < 0
           alpha = min(-pctg*(x[i] / dx[i]), 1.0, alpha)
         end
