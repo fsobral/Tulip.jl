@@ -413,15 +413,16 @@ end
     ds = view(d, n+m+1:2*n+m) # Sem cópias
     pctg = 0.99
     alpha = 1.0
+    aerr = nothing
     for i=1:n
         if dx[i] < 0
-          alpha = min(-pctg*x[i]/dx[i], 1.0)
+            alpha = min(-pctg*x[i] / dx[i], 1.0)
         end
         if ds[i] < 0
-          alpha = min(-pctg*s[i]/ds[i], 1.0)
+            alpha = min(-pctg*s[i] / ds[i], 1.0)
         end
     end
-    alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma 90% desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
+    alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma uma fração desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
     mpc.αp, mpc.αd = alpha, alpha
     alpha0 = alpha
   end
@@ -446,6 +447,12 @@ end
         for i=1:2*n+m # Teoricamente é garantido que x e s são positivos, mas erros numéricos acontecem
             w_n[i] = w[i] + alpha*d[i]
             if 1 <= i <= n || n+m+1 <= i <= 2*n+m
+
+                            if minimum(w_n[i]) < 0
+                error("A estratégia para calcular alpha não funcionou: w_n[$(i)] = $(w_n[i]);\n $(w[i]) + $(alpha) * $(d[i])")
+            end
+
+
               w_n[i] = abs(w_n[i])
               if w_n[i] == 0
                 error("Talvez precisemos forçar w_n[i] > eps^2")
