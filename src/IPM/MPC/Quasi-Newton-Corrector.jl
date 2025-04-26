@@ -175,6 +175,77 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max) # WARNING:
     return status
 end
 
+function compute_residuals_for_Broyden!(rp, rd, rl, ru, x, y, z, alpha, mpc::MPC{T}) where{T} # TODO: Não deixar a função sobrescrever o mpc
+
+    xl = false * mpc.Δ.xl
+    xu = false * mpc.Δ.xu
+    zl = false * mpc.Δ.zl
+    zu = false * mpc.Δ.zu
+    xl .+= alpha .* mpc.Δ.xl
+    xu .+= alpha .* mpc.Δ.xu
+    zl .+= alpha .* mpc.Δ.zl
+    zu .+= alpha .* mpc.Δ.zu
+
+#    pt, res = mpc.pt, mpc.res
+    dat = mpc.dat
+
+    # Primal residual
+    # rp = b - A*x
+    rp .= dat.b
+    mul!(rp, dat.A, x, -one(T), one(T))
+
+    # Lower-bound residual
+    # rl_j = l_j - (x_j - xl_j)  if l_j ∈ R
+    #      = 0                   if l_j = -∞
+    @. rl = ((dat.l + xl) - x) * dat.lflag # TODO: Não sei o que fazer com isso ainda, pois o nosso método usa uma formulação diferente para o problema.
+
+    # Upper-bound residual
+    # ru_j = u_j - (x_j + xu_j)  if u_j ∈ R
+    #      = 0                   if u_j = +∞
+    @. ru = (dat.u - (x + xu)) * dat.uflag # TODO: Aqui também.
+
+    # Dual residual
+    # rd = c - (A'y + zl - zu)
+    rd .= dat.c
+    mul!(rd, transpose(dat.A), y, -one(T), one(T))
+    @. rd += zu .* dat.uflag - zl .* dat.lflag # TODO: Aqui também.
+
+    # Residuals norm
+#    res.rp_nrm = norm(res.rp, Inf)
+#    res.rl_nrm = norm(res.rl, Inf)
+#    res.ru_nrm = norm(res.ru, Inf)
+#    res.rd_nrm = norm(res.rd, Inf)
+#
+#    # Compute primal and dual bounds
+#    mpc.primal_objective = dot(dat.c, pt.x) + dat.c0
+#    mpc.dual_objective   = (
+#        dot(dat.b, pt.y)
+#        + dot(dat.l .* dat.lflag, pt.zl)
+#        - dot(dat.u .* dat.uflag, pt.zu)
+#    ) + dat.c0
+
+    return nothing
+end
+
+function compute_first_system!(v, rp, rl, ru, rd, tau, mpc::MPC) # TODO: Certificar-se de usar a função compute_residuals_for_Broyden para atualizar os resíduos para o ponto inicial de Broyden
+
+    # Newton RHS
+    copyto!(mpc.ξp, rp)
+    copyto!(mpc.ξl, rl)
+    copyto!(mpc.ξu, ru)
+    copyto!(mpc.ξd, rd)
+#    @. mpc.ξxzl = tau -(mpc.pt.xl .* mpc.pt.zl) .* mpc.dat.lflag # TODO: Descomentar essas duas linhas
+#    @. mpc.ξxzu = tau -(mpc.pt.xu .* mpc.pt.zu) .* mpc.dat.uflag
+
+    # Compute affine-scaling direction
+    @timeit mpc.timer "Newton" solve_newton_system!(v, mpc,
+        mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu
+    )
+
+    # TODO: check Newton system residuals, perform iterative refinement if needed
+    return nothing
+end
+
 function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
 
     #1-1.0e-4
@@ -189,6 +260,20 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
     A = dat.A
     b = dat.b
     c = dat.c
+
+    ###### ENSAIO: É assim que vou chamar a função do Tulip que resolve os sistemas
+   
+    rp = false * mpc.res.rp
+    rd = false * mpc.res.rd
+    rl = false * mpc.res.rl
+    ru = false * mpc.res.ru
+
+    compute_residuals_for_Broyden!(rp, rd, rl, ru, pt.x, pt.y, z, 0.5, mpc)
+    compute_first_system!(mpc.Δc, rp, rl, ru, rd, 0.5, mpc)
+    error("rodei!")
+    
+    ##############
+
 
     w = vcat(pt.x, pt.y, z) # WARNING: NÃO usar vcat, isso consome muita memória
 
