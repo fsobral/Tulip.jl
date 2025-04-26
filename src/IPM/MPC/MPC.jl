@@ -471,6 +471,10 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
     println("")
     println("mu_0 = ", dot(pt.x, z)/n)
 
+    if min(minimum(pt.x), minimum(pt.z)) <= 0
+      error("O Ponto inicial não está em F_0!")
+    end
+
 
 
     #    println("Ponto inicial: ", (pt.x, pt.y, z))
