@@ -413,13 +413,13 @@ end
     ds = view(d, n+m+1:2*n+m) # Sem cópias
     pctg = 0.99
     alpha = 1.0
-    aerr = nothing
     for i=1:n
+      aerr = 1.0#x[i] + s[i]
         if dx[i] < 0
-            alpha = min(-pctg*x[i] / dx[i], 1.0)
+          alpha = min(-pctg*(x[i] / dx[i]), 1.0, alpha)
         end
         if ds[i] < 0
-            alpha = min(-pctg*s[i] / ds[i], 1.0)
+          alpha = min(-pctg*(s[i] / ds[i]), 1.0, alpha)
         end
     end
     alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma uma fração desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
