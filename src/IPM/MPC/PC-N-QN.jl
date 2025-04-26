@@ -206,10 +206,10 @@ end
     alpha = 1.0
     for i=1:n
         if dx[i] < 0
-          alpha = min(-pctg*x[i]/dx[i], 1.0)
+          alpha = min(-pctg*(x[i]/dx[i]), 1.0, alpha)
         end
         if ds[i] < 0
-          alpha = min(-pctg*s[i]/ds[i], 1.0)
+          alpha = min(-pctg*(s[i]/ds[i]), 1.0, alpha)
         end
     end
     alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma 90% desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
