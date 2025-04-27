@@ -175,16 +175,7 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max) # WARNING:
     return status
 end
 
-function compute_residuals_for_Broyden!(rp, rd, rl, ru, x, y, z, alpha, mpc::MPC{T}) where{T} # TODO: Não deixar a função sobrescrever o mpc
-
-    xl = false * mpc.Δ.xl
-    xu = false * mpc.Δ.xu
-    zl = false * mpc.Δ.zl
-    zu = false * mpc.Δ.zu
-    xl .+= alpha .* mpc.Δ.xl
-    xu .+= alpha .* mpc.Δ.xu
-    zl .+= alpha .* mpc.Δ.zl
-    zu .+= alpha .* mpc.Δ.zu
+function compute_residuals_for_Broyden!(rp, rd, rl, ru, x, y, xl, xu, zl, zu, alpha, mpc::MPC{T}) where{T} # TODO: Não deixar a função sobrescrever o mpc
 
 #    pt, res = mpc.pt, mpc.res
     dat = mpc.dat
@@ -227,15 +218,18 @@ function compute_residuals_for_Broyden!(rp, rd, rl, ru, x, y, z, alpha, mpc::MPC
     return nothing
 end
 
-function compute_first_system!(v, rp, rl, ru, rd, tau, mpc::MPC) # TODO: Certificar-se de usar a função compute_residuals_for_Broyden para atualizar os resíduos para o ponto inicial de Broyden
+function compute_first_system!(v, rp, rl, ru, rd, xl, xu, zl, zu, tau, mpc::MPC) # TODO: Certificar-se de usar a função compute_residuals_for_Broyden para atualizar os resíduos para o ponto inicial de Broyden
 
     # Newton RHS
     copyto!(mpc.ξp, rp)
     copyto!(mpc.ξl, rl)
     copyto!(mpc.ξu, ru)
     copyto!(mpc.ξd, rd)
-#    @. mpc.ξxzl = tau -(mpc.pt.xl .* mpc.pt.zl) .* mpc.dat.lflag # TODO: Descomentar essas duas linhas
-#    @. mpc.ξxzu = tau -(mpc.pt.xu .* mpc.pt.zu) .* mpc.dat.uflag
+
+    # TODO: O \mu calculado pelo Tulip diz respeito a um problema onde l <= x <= u. Nesse caso, eles introduzem variáveis de folga xl e xu, deixando x livre. Portanto, as variáveis de folga xl e xu são utilizadas para o calculo de \mu. O \mu calculado dessa forma só será o mesmo \mu que eu estou calculando no meu código se l = 0 e u = +\infty. Portanto, devo revisar o meu código para que tau = sig*mu_wk esteja de acordo com a forma esperada pelo Tulip nas equações abaixo.
+
+    @. mpc.ξxzl = tau * mpc.dat.lflag .- (xl .* zl) .* mpc.dat.lflag 
+    @. mpc.ξxzu = tau * mpc.dat.uflag .- (xu .* zu) .* mpc.dat.uflag
 
     # Compute affine-scaling direction
     @timeit mpc.timer "Newton" solve_newton_system!(v, mpc,
@@ -261,18 +255,50 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
     b = dat.b
     c = dat.c
 
-    ###### ENSAIO: É assim que vou chamar a função do Tulip que resolve os sistemas
-   
-    rp = false * mpc.res.rp
-    rd = false * mpc.res.rd
-    rl = false * mpc.res.rl
-    ru = false * mpc.res.ru
-
-    compute_residuals_for_Broyden!(rp, rd, rl, ru, pt.x, pt.y, z, 0.5, mpc)
-    compute_first_system!(mpc.Δc, rp, rl, ru, rd, 0.5, mpc)
-    error("rodei!")
-    
-    ##############
+#    ###### TODO: É assim que vou chamar a função do Tulip que resolve os sistemas
+#
+#    alpha = 0.5
+#    sig = 0.5
+#    mu = 0.8
+#
+#    xl = false * mpc.Δ.xl
+#    xu = false * mpc.Δ.xu
+#    zl = false * mpc.Δ.zl
+#    zu = false * mpc.Δ.zu
+#    xl .+= alpha .* mpc.Δ.xl
+#    xu .+= alpha .* mpc.Δ.xu
+#    zl .+= alpha .* mpc.Δ.zl
+#    zu .+= alpha .* mpc.Δ.zu
+#
+#    rp = false * mpc.res.rp
+#    rd = false * mpc.res.rd
+#    rl = false * mpc.res.rl
+#    ru = false * mpc.res.ru
+#
+#    compute_residuals_for_Broyden!(rp, rd, rl, ru, pt.x, pt.y, xl, xu, zl, zu, alpha, mpc)
+#    compute_first_system!(mpc.Δc, rp, rl, ru, rd, xl, xu, zl, zu, sig*mu, mpc)
+#
+#    # Esse script já está funcionando. Agora falta inseri-lo no local certo do código e fazer as devidas adaptações para que o Broyden resolva o mesmo sistema que a função do Tulip (solve_newton_system).
+#    # Algumas coisas que eu faço no meu código que não fazem mais sentido depois dessa mudança:
+#    # - A forma como eu calculo \mu só faz sentido para problemas da forma
+#    #       min c^T x
+#    #       s.a.: Ax  = b
+#    #              x >= 0
+#    #   No Tulip, os resíduos são calculados para um problema onde l <= x <= u. Isso muda um pouco a forma como o \mu é calculado, mas coincide com a minha forma quando l = 0 e u = + \infty. Então, eu vou precisar rever a forma como calculo \mu no meu código e substituir pelo \mu calculado pelo Tulip.
+#    #   Também não faz mais sentido eu calcular um vetor z, visto que o problema tem uma formulação diferente, e ele não será mais necessário. Além disso, o meu z só fará sentido quando l = 0 e u = +\infty, onde z seria igual a zl, e zu = 0.
+#    #
+#    #   Também é bom levar em conta que o Tulip resolve um sistema envolvendo as seguintes condições KKT:
+#    #   A^T \lambda + zl - zu = c
+#    #                     A x = b
+#    #             xl_i * zl_i = \tau, i = 1, ..., n
+#    #             xu_i * zu_i = \tau, i = 1, ..., n
+#    #         xl, xu, zl, zu >= 0
+#    #   Então, eles estão em busca de um ponto com 5 entradas (que também são vetores): (x, xl, xu, zl, zu).
+#    #   Também vou deixar aqui mais duas fórmulas para eu lembrar depois:
+#    #   x - xl = l
+#    #   x + xu = u
+#    
+#    ##############
 
 
     w = vcat(pt.x, pt.y, z) # WARNING: NÃO usar vcat, isso consome muita memória
@@ -281,7 +307,7 @@ function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e
 ###
     for i=1:n
         if w[i] < 0 || w[n+m+i] < 0
-            println("WARNING: O ponto atual não está em F_0. A escolha de alpha não faz mais sentido.")
+            error("O ponto atual não está em F_0. A escolha de alpha não faz mais sentido quando w tem entradas negativas.")
             break
         end
     end
@@ -496,7 +522,7 @@ end
     @time begin
     dx = view(d, 1:n) # Sem cópias
     ds = view(d, n+m+1:2*n+m) # Sem cópias
-    pctg = 0.99
+    pctg = 0.99 # TODO: Usar o StepDampFactor do próprio Tulip (padrão = 0.9995). Além disso, não embutir a porcentagem no alpha, ou remover o StepDampFactor na atualização do ponto no código do Tulip.
     alpha = 1.0
     for i=1:n
         if dx[i] < 0
