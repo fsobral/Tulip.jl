@@ -1,9 +1,9 @@
 """
-    MPC
+    QNC
 
-Implements Mehrotra's Predictor-Corrector interior-point algorithm.
+Implements Quasi-Newton correctors.
 """
-mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
+mutable struct QNC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
 
     # Problem data, in standard form
     dat::IPMData{T, Tv, Tb, Ta}
@@ -20,6 +20,11 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
     dual_objective::T    # Dual bound: b'y + l' zl - u'zu
 
     timer::TimerOutput
+
+    n_tent_broyden::Int # numero de tentativas do broyden
+    nitb::Int           # numero total de iterações de Broyden
+    n_corr_alt::Int     # numero total de utilizações do método alternativo
+    n_corr_jac::Int     # numero total de correções da jacobiana
 
     #=====================
     Working memory
@@ -47,7 +52,7 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
     regP::Tv  # Primal regularization
     regD::Tv  # Dual regularization
 
-    function MPC(
+    function QNC(
             dat::IPMData{T, Tv, Tb, Ta}, kkt_options::KKTOptions{T}
         ) where{T, Tv<:AbstractVector{T}, Tb<:AbstractVector{Bool}, Ta<:AbstractMatrix{T}}
 
@@ -83,6 +88,7 @@ mutable struct MPC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
                                       0, Trm_Unknown, Sln_Unknown, Sln_Unknown,
                                       T(Inf), T(-Inf),
                                       TimerOutput(),
+                                      0, 0, 0, 0,
                                       pt, res, Δ, Δc, zero(T), zero(T),
                                       ξp, ξl, ξu, ξd, ξxzl, ξxzu,
                                       kkt, regP, regD
@@ -94,11 +100,11 @@ end
 include("step.jl")
 
 """
-    compute_residuals!(::MPC)
+    compute_residuals!(::QNC)
 
 In-place computation of primal-dual residuals at point `pt`.
 """
-function compute_residuals!(mpc::MPC{T}) where{T}
+function compute_residuals!(mpc::QNC{T}) where{T}
 
     pt, res = mpc.pt, mpc.res
     dat = mpc.dat
@@ -147,7 +153,7 @@ end
 
 Update status and return true if solver should stop.
 """
-function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
+function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
     mpc.solver_status = Trm_Unknown
 
     pt, res = mpc.pt, mpc.res
@@ -214,7 +220,7 @@ function update_solver_status!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
     return nothing
 end
 
-function update_solver_status2!(mpc::MPC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
+function update_solver_status2!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
     mpc.solver_status = Trm_Unknown
 
     pt, res = mpc.pt, mpc.res
@@ -286,7 +292,7 @@ end
     optimize!
 
 """
-function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
+function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     # TODO: pre-check whether model needs to be re-optimized.
     # This should happen outside of this function
     dat = mpc.dat
@@ -295,10 +301,10 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     TimerOutputs.reset_timer!(mpc.timer)
     tstart = time()
     mpc.niter = 0
-    global nitb = 0
-    global n_corr_alt = 0
-    global n_corr_jac = 0
-    global n_tent_broyden = 0
+    mpc.nitb = 0
+    mpc.n_corr_alt = 0
+    mpc.n_corr_jac = 0
+    mpc.n_tent_broyden = 0
 
     # Print information about the problem
     if params.OutputLevel > 0
@@ -406,10 +412,10 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
             display(mpc.pt.y)
             println("s=")
             display(mpc.pt.z)
-            println("Nº total de tentativas de broyden: ", n_tent_broyden)
-            println("Nº total de iterações de Broyden: ", nitb)
-            println("Nº total de correções alternativas: ", n_corr_alt)
-            println("Nº total de correções da jacobiana: ", n_corr_jac)
+            println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
+            println("Nº total de iterações de Broyden: ",   mpc.nitb)
+            println("Nº total de correções alternativas: ", mpc.n_corr_alt)
+            println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
         catch err
 
             if isa(err, PosDefException) || isa(err, SingularException)
@@ -433,6 +439,8 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
         mpc.niter += 1
     end
 
+    # TODO: trocar as saidas para coisas desse tipo
+    # params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
     println("Nº de iterações (algoritmo principal): ", mpc.niter)
 
     # TODO: print message based on termination status
@@ -441,7 +449,7 @@ function ipm_optimize!(mpc::MPC{T}, params::IPMOptions{T}) where{T}
     return nothing
 end
 
-function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um ponto inicial proximo do caminho central
+function compute_starting_point2(mpc::QNC{T}, μ = 10.0) where{T} # encontra um ponto inicial proximo do caminho central
 
     # Names
     dat = mpc.dat
@@ -522,7 +530,7 @@ function compute_starting_point2(mpc::MPC{T}, μ = 10.0) where{T} # encontra um 
 
 end
 
-function compute_starting_point(mpc::MPC{T}) where{T}
+function compute_starting_point(mpc::QNC{T}) where{T}
 
     pt = mpc.pt
     dat = mpc.dat

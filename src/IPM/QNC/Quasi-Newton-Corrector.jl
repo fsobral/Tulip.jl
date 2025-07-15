@@ -3,14 +3,14 @@ import LinearAlgebra: ldiv!
 
 mutable struct GoodBroyden{S}
 
-    lu
+    qnc
     u :: Vector{Vector{S}}
     sb :: Vector{Vector{S}}
     rho :: Vector{S}
     size :: Int
 
-    function GoodBroyden(lu, max_size=10)
-        return new{Float64}(lu, Vector{Vector{Float64}}(undef, max_size), Vector{Vector{Float64}}(undef, max_size), Vector{Float64}(undef, max_size), 0)
+    function GoodBroyden(qnc, max_size=10)
+        return new{Float64}(qnc, Vector{Vector{Float64}}(undef, max_size), Vector{Vector{Float64}}(undef, max_size), Vector{Float64}(undef, max_size), 0)
     end
 end
 
@@ -23,7 +23,7 @@ LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin # WARNING: Essa função começa 
 
     # Resolve o caso base
     println("⏰ Tempo para resolver um sistema envolvendo B_0:")
-    @time ldiv!(A.lu, b)
+    solve_newton_system(A.qnc, )
     println("")
     println("⏰ Tempo dedicado a resolver o sistema original (Broyden)")
     m = A.size[]
@@ -240,7 +240,7 @@ function compute_first_system!(v, rp, rl, ru, rd, xl, xu, zl, zu, tau, mpc::MPC)
     return nothing
 end
 
-function Quasi_Newton_Corrector!(mpc :: MPC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
+function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
 
     #1-1.0e-4
 

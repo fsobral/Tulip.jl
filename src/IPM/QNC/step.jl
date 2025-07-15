@@ -1,13 +1,13 @@
 """
     compute_step!(ipm, params)
 
-Compute next IP iterate for the MPC formulation.
+Compute next IP iterate for the QNC formulation.
 
 # Arguments
-- `ipm`: The MPC optimizer model
+- `ipm`: The QNC optimizer model
 - `params`: Optimization parameters
 """
-function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:AbstractVector{T}}
+function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:AbstractVector{T}}
 
   # Names
   dat = mpc.dat
@@ -57,7 +57,7 @@ function compute_step!(mpc::MPC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   # Affine-scaling direction and associated step size
   # Pedro: aqui foi modificado para adotar um alpha unico para ambos os problemas primal e dual
 
-  @timeit mpc.timer "Predictor" compute_predictor!(mpc::MPC)
+  @timeit mpc.timer "Predictor" compute_predictor!(mpc::QNC)
 
   # Reconstruindo z e Δz
 #  z = zeros(n)
@@ -200,7 +200,7 @@ Solve the Newton system
 - `ξp, ξd, ξu, ξg, ξxs, ξwz, ξtk`: Right-hand side vectors
 """
 function solve_newton_system!(Δ::Point{T, Tv},
-    mpc::MPC{T, Tv},
+    mpc::QNC{T, Tv},
     # Right-hand side
     ξp::Tv, ξl::Tv, ξu::Tv, ξd::Tv, ξxzl::Tv, ξxzu::Tv
   ) where{T, Tv<:AbstractVector{T}}
@@ -294,7 +294,7 @@ end
 """
     compute_predictor!(mpc::MPC) -> Nothing
 """
-function compute_predictor!(mpc::MPC)
+function compute_predictor!(mpc::QNC)
 
   # Newton RHS
   copyto!(mpc.ξp, mpc.res.rp)

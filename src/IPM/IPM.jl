@@ -27,7 +27,8 @@ function ipm_optimize! end
 include("HSD/HSD.jl")
 include("MPC/MPC.jl")
 
+include("QNC/QNC.jl")
 # incluir Corretor-Quasi-Newton
-include("./IPM/MPC/Quasi-Newton-Corrector.jl")
+include("./IPM/QNC/Quasi-Newton-Corrector.jl")
 # incluir funcoes uteis
-include("./IPM/MPC/load_problems.jl")
+include("./IPM/QNC/load_problems.jl")

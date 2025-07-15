@@ -1,5 +1,5 @@
-include("./IPM/MPC/load_problems.jl")
-include("./IPM/MPC/PC-N-QN.jl")
+include("./IPM/QNC/load_problems.jl")
+include("./IPM/QNC/PC-N-QN.jl")
 println("Execute o comando testar(nome_ou_numero) para testar um problema.")
 
 function testar(nome)
