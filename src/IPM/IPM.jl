@@ -29,6 +29,6 @@ include("MPC/MPC.jl")
 
 include("QNC/QNC.jl")
 # incluir Corretor-Quasi-Newton
-include("./IPM/QNC/Quasi-Newton-Corrector.jl")
+include("QNC/Quasi-Newton-Corrector.jl")
 # incluir funcoes uteis
-include("./IPM/QNC/load_problems.jl")
+include("QNC/load_problems.jl")

@@ -60,7 +60,7 @@ end
 #LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin
 #
 #    # Resolve o caso base
-#    ldiv!(A.lu, b)
+#    ldiv!(A.qnc, b)
 #    for i = 1:A.size[]
 #        u = A.u[i]
 #        sb = A.sb[i]
@@ -170,7 +170,7 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max) # WARNING:
         #    println("||F(w_$(it))|| = ", norm(F_tau(w, sig*mu_wk)))
         update!(B, sb, -F_tau(w, sig*mu_wk))
     end
-    global nitb += it
+    mpc.nitb += it
     println("Nº de iterações de Broyden: ", it)
     return status
 end
@@ -548,7 +548,7 @@ end
     t = 1
 
     while true
-        global n_tent_broyden += 1
+        mpc.n_tent_broyden += 1
         println("Testagem: ", t)
         println("Alfa = ", alpha)
         println("Sigma = ", sig)
@@ -596,7 +596,7 @@ end
             #            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
             println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
 #            error("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
-            global n_corr_alt += 1
+            mpc.n_corr_alt += 1
             an = alpha0
             for i=1:(2*n+m)
               w_n[i] = w[i] + an*d[i]
@@ -623,7 +623,7 @@ end
 #                dc = - (J_temp \ F_tau(w_n, tau))
                 dc = - F_tau(w_n, tau)
                 ldiv!(Jw, dc)
-                global nitb += 1
+                mpc.nitb += 1
                 ac = 1.0
                 w_n2 .= w_n .+ dc
                 while true
@@ -658,8 +658,8 @@ end
                 yk = F_tau(w_n2, tau) - F_tau(w_n, tau)
                 sk = w_n2 - w_n
                 w_n .= w_n2
-                Jw.lu = Jw.lu.L*Jw.lu.U # reconstroi Jw
-                Jw.lu = Jw.lu + ((yk - Jw.lu*sk)*(sk'))/(dot(sk,sk))
+                Jw.qnc = Jw.qnc.L*Jw.qnc.U # reconstroi Jw
+                Jw.qnc = Jw.qnc + ((yk - Jw.qnc*sk)*(sk'))/(dot(sk,sk))
         end
             break
 
