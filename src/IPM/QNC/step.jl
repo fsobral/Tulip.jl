@@ -316,19 +316,19 @@ end
 """
     compute_corrector!(mpc::MPC) -> Nothing
 """
-function compute_corrector!(mpc::MPC{T, Tv}) where{T, Tv<:AbstractVector{T}}
+function compute_corrector!(mpc::MPC{T, Tv}, σ) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
   dat = mpc.dat
   pt = mpc.pt
   Δ = mpc.Δ
   Δc = mpc.Δc
 
   # Step length for affine-scaling direction
-  αp_aff, αd_aff = mpc.αp, mpc.αd
-  μₐ = (
-        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
-        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
-       ) / pt.p
-  σ = clamp((μₐ / pt.μ)^3, sqrt(eps(T)), one(T) - sqrt(eps(T)))
+#  αp_aff, αd_aff = mpc.αp, mpc.αd
+#  μₐ = (
+#        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
+#        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
+#       ) / pt.p
+#  σ = clamp((μₐ / pt.μ)^3, sqrt(eps(T)), one(T) - sqrt(eps(T)))
 
   # Newton RHS
   # compute_predictor! was called ⟹ ξp, ξl, ξu, ξd are already set

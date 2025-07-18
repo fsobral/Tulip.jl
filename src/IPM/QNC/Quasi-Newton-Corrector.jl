@@ -249,6 +249,8 @@ function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8
     pt = mpc.pt
     res = mpc.res
 
+    # pt_x_cp = copy(pt.x) # Se eu precisar copiar objetos dentro dessa estrutura para não perdê-los, vou fazer mais ou menos assim. 
+
     m, n, p = pt.m, pt.n, pt.p
 
     A = dat.A
