@@ -58,15 +58,16 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   # Pedro: aqui foi modificado para adotar um alpha unico para ambos os problemas primal e dual
 
   @timeit mpc.timer "Predictor" compute_predictor!(mpc::QNC)
+  mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
 
   # Reconstruindo z e Δz
 #  z = zeros(n)
-  dz = zeros(n)
-  for i=1:n
- #   z[i] = c[i] - dot(A[:, i], pt.y)
-    dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
-  end
-  z = mpc.pt.z
+#  dz = zeros(n)
+#  for i=1:n
+# #   z[i] = c[i] - dot(A[:, i], pt.y)
+#    dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
+#  end
+#  z = mpc.pt.z
 
 #  mpc.αp, mpc.αd = max_step_length_pd2(mpc.pt, Δ, z, dz) # Espaço para otimizar!
   #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
@@ -79,16 +80,16 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   # TODO: if step size is large enough, skip corrector
 
   # Corrector
-  corretor_qn = true
-  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
-  @timeit mpc.timer "Corrector" all_tests_failed = Quasi_Newton_Corrector!(mpc, z, dz)
-  if false#all_tests_failed == true
-    pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
-    #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
-    compute_corrector!(mpc::MPC)
-    mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δc)
-    corretor_qn = false
-  end
+#  corretor_qn = true
+#  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
+  @timeit mpc.timer "Corrector" all_tests_failed = Quasi_Newton_Corrector!(mpc, params)
+#  if false#all_tests_failed == true
+#    pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
+#    #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
+#    compute_corrector!(mpc::MPC)
+#    mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δc)
+#    corretor_qn = false
+#  end
 
   # TODO: the following is not needed if there are no additional corrections
   copyto!(Δ.x, Δc.x)
@@ -135,27 +136,38 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
     end
   end
 
-  if corretor_qn == false
+#    if corretor_qn == false
+#      # Update current iterate
+#      mpc.αp *= params.StepDampFactor
+#      mpc.αd *= params.StepDampFactor
+#      pt.x  .+= mpc.αp .* Δ.x
+#      pt.xl .+= mpc.αp .* Δ.xl
+#      pt.xu .+= mpc.αp .* Δ.xu
+#      pt.y  .+= mpc.αd .* Δ.y
+#      pt.zl .+= mpc.αd .* Δ.zl
+#      pt.zu .+= mpc.αd .* Δ.zu
+#      update_mu!(pt)
+#    else
+#      #nothing
+#  #    pt.x  .+= Δ.x
+#  #    pt.xl .+= Δ.xl
+#  #    pt.xu .+= Δ.xu
+#  #    pt.y  .+= Δ.y
+#  #    pt.zl .+= Δ.zl
+#  #    pt.zu .+= Δ.zu
+#  #    update_mu!(pt)
+#  end
+
     # Update current iterate
-    mpc.αp *= params.StepDampFactor
-    mpc.αd *= params.StepDampFactor
-    pt.x  .+= mpc.αp .* Δ.x
-    pt.xl .+= mpc.αp .* Δ.xl
-    pt.xu .+= mpc.αp .* Δ.xu
-    pt.y  .+= mpc.αd .* Δ.y
-    pt.zl .+= mpc.αd .* Δ.zl
-    pt.zu .+= mpc.αd .* Δ.zu
+#    mpc.αp *= params.StepDampFactor
+#    mpc.αd *= params.StepDampFactor
+    pt.x  .+=  Δ.x   # Modificado, pois esta já é a direção resultante ( alpha * direcao de Newton + correcão de Broyden) 
+    pt.xl .+=  Δ.xl  #
+    pt.xu .+=  Δ.xu  #
+    pt.y  .+=  Δ.y   #
+    pt.zl .+=  Δ.zl  #
+    pt.zu .+=  Δ.zu  #
     update_mu!(pt)
-  else
-    #nothing
-#    pt.x  .+= Δ.x
-#    pt.xl .+= Δ.xl
-#    pt.xu .+= Δ.xu
-#    pt.y  .+= Δ.y
-#    pt.zl .+= Δ.zl
-#    pt.zu .+= Δ.zu
-#    update_mu!(pt)
-  end
 
   return nothing
 end
@@ -255,7 +267,9 @@ function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:Abs
   azu = max_step_length(pt.zu, δ.zu)
 
   αp = min(one(T), axl, axu)
-  αd = min(one(T), azl, azu)
+  αd = min(one(T), azl, azu, αp) # Modificado para usar o mesmo alpha para ambos x e y.
+  αp = αd                        #
+  # O código original do Tulip não testa se é maior que zero. Talvez tenha que acrescentar isso aqui.
 
   return αp, αd
 end
@@ -316,7 +330,11 @@ end
 """
     compute_corrector!(mpc::MPC) -> Nothing
 """
-function compute_corrector!(mpc::MPC{T, Tv}, σ) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
+function compute_corrector!(mpc::QNC{T, Tv}, σ) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
+
+  # WARNING: Eu acho que o deslocamento que estou fazendo no ponto pode estar alterando a matriz jacobiana, então apenas recalcular os resíduos não vai ser suficiente. 
+
+
   dat = mpc.dat
   pt = mpc.pt
   Δ = mpc.Δ

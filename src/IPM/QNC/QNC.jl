@@ -331,7 +331,7 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     end
 
     # Set starting point
-    @timeit mpc.timer "Initial point" compute_starting_point2(mpc)
+    @timeit mpc.timer "Initial point" compute_starting_point(mpc)
 
     # Main loop
     # Iteration 0 corresponds to the starting point.
@@ -410,8 +410,6 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
             display(mpc.pt.x)
             println("lambda=")
             display(mpc.pt.y)
-            println("s=")
-            display(mpc.pt.z)
             println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
             println("Nº total de iterações de Broyden: ",   mpc.nitb)
             println("Nº total de correções alternativas: ", mpc.n_corr_alt)
@@ -544,24 +542,24 @@ function compute_starting_point(mpc::QNC{T}) where{T}
 
     # I. Recover positive primal-dual coordinates
     δx = one(T) + max(
-                      zero(T),
-                      (-3 // 2) * minimum((pt.x .- dat.l) .* dat.lflag),
-                      (-3 // 2) * minimum((dat.u .- pt.x) .* dat.uflag)
-                     )
+        zero(T),
+        (-3 // 2) * minimum((pt.x .- dat.l) .* dat.lflag),
+        (-3 // 2) * minimum((dat.u .- pt.x) .* dat.uflag)
+    )
     @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
     @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
 
     z = dat.c - dat.A' * pt.y
     #=
-    We set zl, zu such that `z = zl - zu`
+        We set zl, zu such that `z = zl - zu`
 
-    lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
-    ----+-----+--------+---------+
-    yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
-    yes |  no |     zⱼ |      0  |
-    no | yes |     0  |     -zⱼ |
-    no |  no |     0  |      0  |
-    ----+-----+--------+---------+
+         lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
+        ----+-----+--------+---------+
+        yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
+        yes |  no |     zⱼ |      0  |
+         no | yes |     0  |     -zⱼ |
+         no |  no |     0  |      0  |
+        ----+-----+--------+---------+
     =#
     @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
     @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
@@ -588,3 +586,4 @@ function compute_starting_point(mpc::QNC{T}) where{T}
 
     return nothing
 end
+

@@ -175,6 +175,68 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max) # WARNING:
     return status
 end
 
+function Broyden2!(mpc, alpha, sig)
+  pt = mpc.pt
+  Δ = mpc.Δ
+  Δc = mpc.Δc
+
+  ### 1ª iteração de Broyden
+
+  # Recuperar a jacobiana original
+
+  pt.x  .-= alpha .* Δ.x
+  pt.xl .-= alpha .* Δ.xl
+  pt.xu .-= alpha .* Δ.xu
+  pt.y  .-= alpha .* Δ.y
+  pt.zl .-= alpha .* Δ.zl
+  pt.zu .-= alpha .* Δ.zu
+  
+  compute_corrector!(mpc, sig) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
+
+  # Recupera o ponto após o passo de Newton e já soma a direção de Broyden
+  pt.x  .+= alpha .* Δ.x  .+ Δc.x
+  pt.xl .+= alpha .* Δ.xl .+ Δc.xl
+  pt.xu .+= alpha .* Δ.xu .+ Δc.xu
+  pt.y  .+= alpha .* Δ.y  .+ Δc.y
+  pt.zl .+= alpha .* Δ.zl .+ Δc.zl
+  pt.zu .+= alpha .* Δ.zu .+ Δc.zu
+
+  ### Fim da 1ª iteração de Broyden
+
+    # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
+    num1 = length(pt.xl)
+    num2 = length(pt.xu)
+    pos_cond = true
+    while pos_cond
+    for i=1:num1
+        if pt.xl[i] < 0 || pt.zl[i] < 0
+        pos_cond = false
+            break
+        end
+    end
+    break
+  end
+    while pos_cond
+    for i=1:num2
+        if pt.xu[i] < 0 || pt.zu[i] < 0
+        pos_cond = false
+            break
+        end
+    end
+    break
+  end
+    if pos_cond == false
+        return false
+    end
+
+
+#  update_mu!(pt)
+
+
+  #error("Esse erro é só pra parar o código e testar até aqui.")
+  return true
+end
+
 function compute_residuals_for_Broyden!(rp, rd, rl, ru, x, y, xl, xu, zl, zu, alpha, mpc::MPC{T}) where{T} # TODO: Não deixar a função sobrescrever o mpc
 
 #    pt, res = mpc.pt, mpc.res
@@ -240,7 +302,7 @@ function compute_first_system!(v, rp, rl, ru, rd, xl, xu, zl, zu, tau, mpc::MPC)
     return nothing
 end
 
-function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
+function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
 
     #1-1.0e-4
 
@@ -248,6 +310,9 @@ function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8
     dat = mpc.dat
     pt = mpc.pt
     res = mpc.res
+
+    Δ  = mpc.Δ
+    Δc = mpc.Δc
 
     # pt_x_cp = copy(pt.x) # Se eu precisar copiar objetos dentro dessa estrutura para não perdê-los, vou fazer mais ou menos assim. 
 
@@ -303,16 +368,44 @@ function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8
 #    ##############
 
 
-    w = vcat(pt.x, pt.y, z) # WARNING: NÃO usar vcat, isso consome muita memória
+#    w = vcat(pt.x, pt.y, z) # WARNING: NÃO usar vcat, isso consome muita memória
 
 
 ###
-    for i=1:n
-        if w[i] < 0 || w[n+m+i] < 0
-            error("O ponto atual não está em F_0. A escolha de alpha não faz mais sentido quando w tem entradas negativas.")
+#    for i=1:n
+#        if w[i] < 0 || w[n+m+i] < 0
+#            error("O ponto atual não está em F_0. A escolha de alpha não faz mais sentido quando w tem entradas negativas.")
+#            break
+#        end
+#    end
+
+    # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
+    num1 = length(pt.xl)
+    num2 = length(pt.xu)
+    pos_cond = true
+    while pos_cond
+    for i=1:num1
+        if pt.xl[i] < 0 || pt.zl[i] < 0
+        pos_cond = false
             break
         end
     end
+    break
+  end
+    while pos_cond
+    for i=1:num2
+        if pt.xu[i] < 0 || pt.zu[i] < 0
+        pos_cond = false
+            break
+        end
+    end
+    break
+  end
+    if pos_cond == false
+            error("O ponto atual não está em F_0. A escolha de alpha não faz mais sentido quando w tem entradas negativas.")
+    end
+
+      
 ###
 
 #    F_tau(w, tau) = begin
@@ -336,50 +429,50 @@ function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8
 #        return v    
 #
 #    end
-    F_tau(w, tau) = begin # TODO: A função F_tau é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
-      println("⏰ Tempo para calcular F_tau:")
-      @time begin
-        x = view(w[1:n], :) # Sem cópias
-        lamb = view(w[n+1:n+m], :) # Sem cópias
-        s = view(w[n+m+1:2*n+m], :) # Sem cópias
-        v = zeros(2*n+m)
-
-#        rc = v[1:n]
-#        rb = v[n+1:n+m]
-#        r_mu = v[n+m+1:2*n+m]
-        prod = nothing
-        for i=1:n
-#            v[i] = dot(A[:, i], lamb) + s[i] - c[i]
-            for j=1:m # Calcula o produto linha-coluna de A^T lambda
-              prod = A[j, i]
-              prod *= lamb[j]
-              v[i] += prod
-            end
-            v[i] += s[i]
-            v[i] -= c[i]
-            prod = x[i]
-            prod *= s[i]
-            v[n+m+i] += prod
-            v[n+m+i] -= tau
-        end
-        for i=1:m
-#            v[n+i] = dot(A[i, :], x) - b[i]
-             for j=1:n # Calcula o produto linha-coluna de A x
-              prod = A[i, j]
-              prod *= x[j]
-              v[n+i] += prod
-            end
-            v[n+i] -= b[i]
-        end
-      end
-      println("")
-        return v    
-
-        #    if tau == 0
-        #      return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n))
-        #    end
-        #    return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n) - tau*ones(n))
-    end
+#      F_tau(w, tau) = begin # TODO: A função F_tau é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
+#        println("⏰ Tempo para calcular F_tau:")
+#        @time begin
+#          x = view(w[1:n], :) # Sem cópias
+#          lamb = view(w[n+1:n+m], :) # Sem cópias
+#          s = view(w[n+m+1:2*n+m], :) # Sem cópias
+#          v = zeros(2*n+m)
+#
+#  #        rc = v[1:n]
+#  #        rb = v[n+1:n+m]
+#  #        r_mu = v[n+m+1:2*n+m]
+#          prod = nothing
+#          for i=1:n
+#  #            v[i] = dot(A[:, i], lamb) + s[i] - c[i]
+#              for j=1:m # Calcula o produto linha-coluna de A^T lambda
+#                prod = A[j, i]
+#                prod *= lamb[j]
+#                v[i] += prod
+#              end
+#              v[i] += s[i]
+#              v[i] -= c[i]
+#              prod = x[i]
+#              prod *= s[i]
+#              v[n+m+i] += prod
+#              v[n+m+i] -= tau
+#          end
+#          for i=1:m
+#  #            v[n+i] = dot(A[i, :], x) - b[i]
+#              for j=1:n # Calcula o produto linha-coluna de A x
+#                prod = A[i, j]
+#                prod *= x[j]
+#                v[n+i] += prod
+#              end
+#              v[n+i] -= b[i]
+#          end
+#        end
+#        println("")
+#          return v    
+#
+#          #    if tau == 0
+#          #      return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n))
+#          #    end
+#          #    return vcat(A'*lamb + s - c, A*x-b, diagm(x)*diagm(s)*ones(n) - tau*ones(n))
+#      end
 #    J(w) = begin
 #        x = w[1:n]
 #        s = w[n+m+1:2*n+m]
@@ -393,52 +486,52 @@ function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8
 #        end
 #        return M
 #    end
-    J(w) = begin # TODO: A função J é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
-      println("⏰ Tempo para calcular J:")
-      @time begin
-        x = view(w[1:n], :) # Sem cópias
-        s = view(w[n+m+1:2*n+m], :) # Sem cópias
-        M = spzeros(2*n+m, 2*n+m) # Cria uma matriz de zeros, mas sem armazenar zeros
-#        M[1:n, n+1:n+m] = A'
-#        M[1:n, n+m+1:2*n+m] = I(n)
-#        M[n+1:n+m, 1:n] = A
-#        M[n+m+1:2*n+m, 1:n] = diagm(s)
-#        M[n+m+1:2*n+m, n+m+1:2*n+m] = diagm(x)
-        for i=1:m # Esse for preenche as matrizes A e A'
-          for j=1:n
-            if abs(A[i, j]) > 1.0e-8
-              M[j, n+i] = A[i, j]
-              M[n+i, j] = A[i, j]
-            end
-          end
-        end
-        for j=1:n # Esse for preenche a identidade I, e as matrizes diagonais X e S
-          M[j, n+m+j] = 1.0
-          if abs(s[j]) > 1.0e-8 # TODO: Remover o abs (coloquei somente como salvaguarda para erros numéricos, mas s teoricamente já deveria ser positivo)
-            M[n+m+j, j] = s[j]
-          end
-          if abs(x[j]) > 1.0e-8 # TODO: Remover o abs
-            M[n+m+j, n+m+j] = x[j]
-          end
-        end
-#        dropzeros!(M) # Remove quaisquer zeros remanescentes na memória
-      end
-      println("")
-        return M
-        #    return vcat(hcat(zeros(n, n), A', I),
-        #             hcat(A, zeros(m, m+n)),
-        #             hcat(diagm(s), zeros(n, m), diagm(x))
-        #               )
-    end
+#      J(w) = begin # TODO: A função J é uma das que mais consomem memória. As vezes entra em garbage colector também. Uma das principais candidatas a receber melhorias.
+#        println("⏰ Tempo para calcular J:")
+#        @time begin
+#          x = view(w[1:n], :) # Sem cópias
+#          s = view(w[n+m+1:2*n+m], :) # Sem cópias
+#          M = spzeros(2*n+m, 2*n+m) # Cria uma matriz de zeros, mas sem armazenar zeros
+#  #        M[1:n, n+1:n+m] = A'
+#  #        M[1:n, n+m+1:2*n+m] = I(n)
+#  #        M[n+1:n+m, 1:n] = A
+#  #        M[n+m+1:2*n+m, 1:n] = diagm(s)
+#  #        M[n+m+1:2*n+m, n+m+1:2*n+m] = diagm(x)
+#          for i=1:m # Esse for preenche as matrizes A e A'
+#            for j=1:n
+#              if abs(A[i, j]) > 1.0e-8
+#                M[j, n+i] = A[i, j]
+#                M[n+i, j] = A[i, j]
+#              end
+#            end
+#          end
+#          for j=1:n # Esse for preenche a identidade I, e as matrizes diagonais X e S
+#            M[j, n+m+j] = 1.0
+#            if abs(s[j]) > 1.0e-8 # TODO: Remover o abs (coloquei somente como salvaguarda para erros numéricos, mas s teoricamente já deveria ser positivo)
+#              M[n+m+j, j] = s[j]
+#            end
+#            if abs(x[j]) > 1.0e-8 # TODO: Remover o abs
+#              M[n+m+j, n+m+j] = x[j]
+#            end
+#          end
+#  #        dropzeros!(M) # Remove quaisquer zeros remanescentes na memória
+#        end
+#        println("")
+#          return M
+#          #    return vcat(hcat(zeros(n, n), A', I),
+#          #             hcat(A, zeros(m, m+n)),
+#          #             hcat(diagm(s), zeros(n, m), diagm(x))
+#          #               )
+#      end
 
 
 #    x = w[1:n]
 #    lamb = w[n+1:n+m]
 #    s = w[n+m+1:2*n+m]
 ###
-    x = pt.x
-    lamb = pt.y
-    s = z
+###    x = pt.x
+###    lamb = pt.y
+###    s = z
 ###
 
 #    J_temp = J(w)
@@ -470,29 +563,29 @@ function Quasi_Newton_Corrector!(mpc::QNC, z, dz, sig_max = 1-1.0e-4, eps=1.0e-8
 #    # ----------------------------------------
 #
 #    Jw = GoodBroyden(fatoracao, it_max)
-    Jw = J(w)
-    println("⏰ Tempo para fatorar Jw (inclui o tempo que passa tentando corrigir a jacobiana até ser possível fatorar):")
-    @time begin
-    is_invertible=false
-    while is_invertible==false
-    try
-    Jw = lu(Jw)
-    is_invertible=true
-  catch
-        for i=1:2*n+m # Soma 1.0e-8*I em Jw para tentar fazer Jw se tornar inversivel
-      Jw[i, i] += 1.0e-8
-    end
-  end
-  end
-end
-    println("")
-    J_temp = copy(Jw) # TODO: Remover a necessidade de guardar a Jacobiana como uma matriz normal (não GoodBroyden) para o método alternativo, e passar a matriz GoodBroyden para ele.
-    Jw = GoodBroyden(Jw, it_max)
+#    Jw = J(w)
+#    println("⏰ Tempo para fatorar Jw (inclui o tempo que passa tentando corrigir a jacobiana até ser possível fatorar):")
+#    @time begin
+#    is_invertible=false
+#    while is_invertible==false
+#    try
+#    Jw = lu(Jw)
+#    is_invertible=true
+#  catch
+#        for i=1:2*n+m # Soma 1.0e-8*I em Jw para tentar fazer Jw se tornar inversivel
+#      Jw[i, i] += 1.0e-8
+#    end
+#  end
+#  end
+#end
+#    println("")
+###    J_temp = copy(Jw) # TODO: Remover a necessidade de guardar a Jacobiana como uma matriz normal (não GoodBroyden) para o método alternativo, e passar a matriz GoodBroyden para ele.
+###    Jw = GoodBroyden(Jw, it_max)
     # Passo 1
-#    d = - (fatoracao \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
-    d = - (J_temp \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
-    mpc.Δ.x = d[1:n] # TODO: Trocar por view
-    mpc.Δ.y = d[n+1:n+m] # TODO: Trocar por view
+####    d = - (fatoracao \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
+###    d = - (J_temp \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
+###    mpc.Δ.x = d[1:n] # TODO: Trocar por view
+###    mpc.Δ.y = d[n+1:n+m] # TODO: Trocar por view
 
     # Passo 2
     
@@ -520,33 +613,37 @@ end
 ##    alpha0 = 0.9*alpha
 #    mpc.αp, mpc.αd = alpha0, alpha0
 #    alpha = alpha0
-    println("⏰ Tempo para encontrar alpha para o passo de Newton:")
-    @time begin
-    dx = view(d, 1:n) # Sem cópias
-    ds = view(d, n+m+1:2*n+m) # Sem cópias
-    pctg = 0.99 # TODO: Usar o StepDampFactor do próprio Tulip (padrão = 0.9995). Além disso, não embutir a porcentagem no alpha, ou remover o StepDampFactor na atualização do ponto no código do Tulip.
-    alpha = 1.0
-    for i=1:n
-        if dx[i] < 0
-          alpha = min(-pctg*(x[i] / dx[i]), 1.0, alpha)
-        end
-        if ds[i] < 0
-          alpha = min(-pctg*(s[i] / ds[i]), 1.0, alpha)
-        end
-    end
-    alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma uma fração desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
-    mpc.αp, mpc.αd = alpha, alpha
-    alpha0 = alpha
-  end
+#    println("⏰ Tempo para encontrar alpha para o passo de Newton:")
+#    @time begin
+#    dx = view(d, 1:n) # Sem cópias
+#    ds = view(d, n+m+1:2*n+m) # Sem cópias
+#    pctg = 0.99 # TODO: Usar o StepDampFactor do próprio Tulip (padrão = 0.9995). Além disso, não embutir a porcentagem no alpha, ou remover o StepDampFactor na atualização do ponto no código do Tulip.
+#    alpha = 1.0
+#    for i=1:n
+#        if dx[i] < 0
+#          alpha = min(-pctg*(x[i] / dx[i]), 1.0, alpha)
+#        end
+#        if ds[i] < 0
+#          alpha = min(-pctg*(s[i] / ds[i]), 1.0, alpha)
+#        end
+#    end
+#    alpha = max(alpha, 0) # calcula alpha máximo tal que algum xi ou si zera e depois toma uma fração desse passo, ou passo 1 no caso em que nenhuma variável bloqueia o passo.
+#    mpc.αp, mpc.αd = alpha, alpha
+#    alpha0 = alpha
+#  end
+
+alpha = mpc.αp * params.StepDampFactor # Pressupõe αp = αd
+
   println("")
     # Passo 3
-    println("⏰ Tempo gasto para encontrar sigma para o passo corretor:")
+#    println("⏰ Tempo gasto para encontrar sigma para o passo corretor:")
     # sig = 0.5*sig_max
-    sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
+    sig = min(sig_max, 1.0 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
     println("")
     # Passo 4
-    mu_wk = dot(x, s)/n
-    w_n = zeros(2*n+m)
+#    mu_wk = dot(x, s)/n
+    cp_x, cp_y, cp_xl, cp_xu, cp_zl, cp_zu, cp_mu = copy(pt.x), copy(pt.y), copy(pt.xl), copy(pt.xu), copy(pt.zl), copy(pt.zu), copy(pt.μ) # Fazendo cópia do iterando
+#    w_n = zeros(2*n+m)
     t = 1
 
     while true
@@ -556,33 +653,45 @@ end
         println("Sigma = ", sig)
 
 #        w_n .= w + alpha*d
-        for i=1:2*n+m # Teoricamente é garantido que x e s são positivos, mas erros numéricos acontecem
-            w_n[i] = w[i] + alpha*d[i]
-            if 1 <= i <= n || n+m+1 <= i <= 2*n+m
+      # Comentei esse teste, pois não parece essencial. Mas, se precisar, eu o adapto para o novo formato.
+#        for i=1:2*n+m # Teoricamente é garantido que x e s são positivos, mas erros numéricos acontecem
+#            w_n[i] = w[i] + alpha*d[i]
+#            if 1 <= i <= n || n+m+1 <= i <= 2*n+m
+#
+#                            if minimum(w_n[i]) < 0
+#                error("A estratégia para calcular alpha não funcionou: w_n[$(i)] = $(w_n[i]);\n $(w[i]) + $(alpha) * $(d[i])")
+#            end
+#
+#
+#              w_n[i] = abs(w_n[i])
+#              if w_n[i] == 0
+#                error("Talvez precisemos forçar w_n[i] > eps^2")
+#              end
+#            end
+#        end
 
-                            if minimum(w_n[i]) < 0
-                error("A estratégia para calcular alpha não funcionou: w_n[$(i)] = $(w_n[i]);\n $(w[i]) + $(alpha) * $(d[i])")
-            end
+    # Anda na direção preditora, com o tamanho de passo especificado
+    pt.x  .+= alpha .* Δ.x
+    pt.xl .+= alpha .* Δ.xl
+    pt.xu .+= alpha .* Δ.xu
+    pt.y  .+= alpha .* Δ.y
+    pt.zl .+= alpha .* Δ.zl
+    pt.zu .+= alpha .* Δ.zu
 
+#        println("Ponto inicial do Broyden")
+#        display(w_n)
 
-              w_n[i] = abs(w_n[i])
-              if w_n[i] == 0
-                error("Talvez precisemos forçar w_n[i] > eps^2")
-              end
-            end
-        end
+        compute_residuals!(mpc) # Atualiza os resíduos
+        update_mu!(pt) # Atualiza mu só pra printar ele
+        println("mu (após newton) = ", pt.μ)
+        pt.μ = cp_mu # Retorna pro valor original
 
+#        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
+        b_status = Broyden2!(mpc, alpha, sig)
+#        Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
-        println("Ponto inicial do Broyden")
-        display(w_n)
-
-        println("mu (após newton) = ", dot(w_n[1:n], w_n[n+m+1:2*n+m])/n)
-
-        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
-        Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
-
-        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
-        println("Status (Broyden) = ", b_status)
+#        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
+#        println("Status (Broyden) = ", b_status)
         if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
             break
         end
@@ -591,10 +700,23 @@ end
 #        sig = 0.5*(sig_max + sig)
         sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
         #    if abs(sig_max - sig) < 1.0e-8 # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
+
+        # Descarta os deslocamentos feitos durante o método de Broyden
+
+        pt.x  .= cp_x
+        pt.xl .= cp_xl
+        pt.xu .= cp_xu
+        pt.y  .= cp_y
+        pt.zl .= cp_zl
+        pt.zu .= cp_zu
         
 ###### AQUI COMEÇA O MÉTODO ALTERNATIVO
 
-        if t == 3 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
+        if t == 100
+            error("É necessário utilizar o método alternativo, mas por enquanto ele está desligado.")
+        end
+
+        if t == -1 # 3 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
             #            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
             println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
 #            error("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
@@ -669,32 +791,48 @@ end
 
         t += 1
     end
-    # Passo 5 (adaptado: atualizar direcao)
+    # Passo 5 
     #    println("w após broyden: ", w_n)
-    mpc.pt.x = w_n[1:n]
+#    mpc.pt.x = w_n[1:n]
     
     # atualizando xl e xu (para o tulip)
     
-    mpc.pt.xl .= mpc.pt.x - mpc.dat.l
-    mpc.pt.xu .= mpc.dat.u - mpc.pt.x
+#    mpc.pt.xl .= mpc.pt.x - mpc.dat.l
+#    mpc.pt.xu .= mpc.dat.u - mpc.pt.x
     
     # ---
     
-    mpc.pt.y = w_n[n+1:n+m]
-    mpc.pt.z .= w_n[n+m+1:2*n+m]
+#    mpc.pt.y = w_n[n+1:n+m]
+#    mpc.pt.z .= w_n[n+m+1:2*n+m]
 
 
     
     # atualizando zl e zu (para o tulip) [provisorio]
     
-    mpc.pt.zl .= copy(mpc.pt.z)
-    mpc.pt.xu .= 0
+#    mpc.pt.zl .= copy(mpc.pt.z)
+#    mpc.pt.xu .= 0
     
     # ---
     
-    w_n .= w_n - w
-    mpc.Δc.x .= w_n[1:n]
-    mpc.Δc.y .= w_n[n+1:n+m] # talvez precise atualizar mais coisas em delta_c
+#    w_n .= w_n - w
+#    mpc.Δc.x .= w_n[1:n]
+#    mpc.Δc.y .= w_n[n+1:n+m] # talvez precise atualizar mais coisas em delta_c
+
+    # Calcula a direção resultante após o passo preditor e as iterações do método de Broyden
+    Δc.x =  pt.x - cp_x
+    Δc.y =  pt.y - cp_y
+    Δc.xl = pt.xl - cp_xl
+    Δc.xu = pt.xu - cp_xu
+    Δc.zl = pt.zl - cp_zl
+    Δc.zu = pt.zu - cp_zu
+
+    # Retorna o ponto para sua posição inicial.
+        pt.x  .= cp_x
+        pt.xl .= cp_xl
+        pt.xu .= cp_xu
+        pt.y  .= cp_y
+        pt.zl .= cp_zl
+        pt.zu .= cp_zu
 
     if t == 30
         return true
