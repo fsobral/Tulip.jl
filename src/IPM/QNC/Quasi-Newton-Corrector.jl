@@ -175,12 +175,69 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max) # WARNING:
     return status
 end
 
-function Broyden2!(mpc, alpha, sig)
+function positivity_test(mpc)
+    pt = mpc.pt
+    # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
+    num1 = length(pt.xl)
+    num2 = length(pt.xu)
+    for i=1:num1
+        if pt.xl[i] < 0 || pt.zl[i] < 0
+            return false
+        end
+    end
+    for i=1:num2
+        if pt.xu[i] < 0 || pt.zu[i] < 0
+            return false
+        end
+    end
+    return true
+end
+
+function decrease_and_feasibility_test(mpc, cp_mu, sig)
+    pt = mpc.pt
+    update_mu!(pt)
+    if (pt.μ <= 0.5 * (1.0 + sig) * cp_mu) && positivity_test(mpc)
+        return true
+    end
+    pt.μ = cp_mu
+    return false
+end
+
+function Broyden_convergence_test(mpc, eps = 1.0e-8)
+    for v in (mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
+        if norm(v) > eps
+            return false
+        end
+    end
+    return true
+end
+
+function Broyden_parada2(mpc, cp_mu, it, it_max, eps, sig)
+    convergence = false
+    accept_point = false
+    stop = false
+    if Broyden_convergence_test(mpc, eps)
+        convergence = true
+    end
+    if decrease_and_feasibility_test(mpc, cp_mu, sig)
+       accept_point = true
+       stop = true
+    end
+    if convergence || it >= it_max
+        stop = true
+    end
+    return stop, convergence, accept_point
+end 
+
+
+function Broyden2!(mpc, alpha, sig, cp_mu, it_max, eps)
   pt = mpc.pt
   Δ = mpc.Δ
   Δc = mpc.Δc
 
   ### 1ª iteração de Broyden
+
+  it = 1
 
   # Recuperar a jacobiana original
 
@@ -201,40 +258,28 @@ function Broyden2!(mpc, alpha, sig)
   pt.zl .+= alpha .* Δ.zl .+ Δc.zl
   pt.zu .+= alpha .* Δ.zu .+ Δc.zu
 
+  it += 1
+
   ### Fim da 1ª iteração de Broyden
 
-    # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
-    num1 = length(pt.xl)
-    num2 = length(pt.xu)
-    pos_cond = true
-    while pos_cond
-    for i=1:num1
-        if pt.xl[i] < 0 || pt.zl[i] < 0
-        pos_cond = false
-            break
-        end
-    end
-    break
-  end
-    while pos_cond
-    for i=1:num2
-        if pt.xu[i] < 0 || pt.zu[i] < 0
-        pos_cond = false
-            break
-        end
-    end
-    break
-  end
-    if pos_cond == false
-        return false
+  ### Iterações posteriores...
+
+    while true # Main loop
+
+    # Stopping criteria
+
+    stop, convergence, accept_point = Broyden_parada2(mpc, cp_mu, it, it_max, eps, sig)
+    if stop == true
+        mpc.nitb += it # contabiliza as iterações de Broyden
+        return accept_point
     end
 
+    # código para as próximas iterações
 
-#  update_mu!(pt)
+    it += 1
 
+    end
 
-  #error("Esse erro é só pra parar o código e testar até aqui.")
-  return true
 end
 
 function compute_residuals_for_Broyden!(rp, rd, rl, ru, x, y, xl, xu, zl, zu, alpha, mpc::MPC{T}) where{T} # TODO: Não deixar a função sobrescrever o mpc
@@ -380,27 +425,7 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 #    end
 
     # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
-    num1 = length(pt.xl)
-    num2 = length(pt.xu)
-    pos_cond = true
-    while pos_cond
-    for i=1:num1
-        if pt.xl[i] < 0 || pt.zl[i] < 0
-        pos_cond = false
-            break
-        end
-    end
-    break
-  end
-    while pos_cond
-    for i=1:num2
-        if pt.xu[i] < 0 || pt.zu[i] < 0
-        pos_cond = false
-            break
-        end
-    end
-    break
-  end
+    pos_cond = positivity_test(mpc)
     if pos_cond == false
             error("O ponto atual não está em F_0. A escolha de alpha não faz mais sentido quando w tem entradas negativas.")
     end
@@ -687,7 +712,7 @@ alpha = mpc.αp * params.StepDampFactor # Pressupõe αp = αd
         pt.μ = cp_mu # Retorna pro valor original
 
 #        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
-        b_status = Broyden2!(mpc, alpha, sig)
+        b_status = Broyden2!(mpc, alpha, sig, cp_mu, it_max, eps)
 #        Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
 #        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
@@ -698,10 +723,10 @@ alpha = mpc.αp * params.StepDampFactor # Pressupõe αp = αd
         alpha *= 0.5
 #        mpc.αp, mpc.αd = alpha, alpha # Acho que deveria atualizar esse também
 #        sig = 0.5*(sig_max + sig)
-        sig = min(sig_max, 1 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
+        sig = min(sig_max, 1.0 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
         #    if abs(sig_max - sig) < 1.0e-8 # Parar se sig se aproximar muito de sig_max (e depois acusar erro: sig_max não é grande suficiente ou o ponto inicial tomado não está próximo o suficiente do caminho central)
 
-        # Descarta os deslocamentos feitos durante o método de Broyden
+        # Descarta os deslocamentos feitos durante o método de Broyden e retorna mu para seu valor original
 
         pt.x  .= cp_x
         pt.xl .= cp_xl
@@ -709,6 +734,7 @@ alpha = mpc.αp * params.StepDampFactor # Pressupõe αp = αd
         pt.y  .= cp_y
         pt.zl .= cp_zl
         pt.zu .= cp_zu
+        pt.μ = cp_mu
         
 ###### AQUI COMEÇA O MÉTODO ALTERNATIVO
 
