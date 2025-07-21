@@ -19,11 +19,17 @@ end
 
 Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden update.
 """
-LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
+LinearAlgebra.ldiv!(A::GoodBroyden, sig) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
 
     # Resolve o caso base
     println("⏰ Tempo para resolver um sistema envolvendo B_0:")
-    solve_newton_system(A.qnc, )
+
+    compute_corrector!(A.qnc, sig) # Pressupõe que o lado direito correto já está armazenado em qnc. Também pressupõe que o ponto atual armazenado em qnc seja o ponto antes do passo preditor (pois caso contrário, B_0 não seria a jacobiana utilizada no passo preditor).
+    
+    Δc = A.qnc.Δc
+
+    b = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # Constrói o lado direito
+
     println("")
     println("⏰ Tempo dedicado a resolver o sistema original (Broyden)")
     m = A.size[]
@@ -52,6 +58,10 @@ LinearAlgebra.ldiv!(A::GoodBroyden, b) = begin # WARNING: Essa função começa 
 
     end
     println("")
+
+#    rp, rl, ru, rd, rxzl, rxzu = deconcatenate(A.qnc, b)
+    Δc = A.qnc.Δc
+    Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(A.qnc, b)
 
     nothing
 
@@ -177,15 +187,16 @@ end
 
 function positivity_test(mpc)
     pt = mpc.pt
+    n = mpc.pt.n
     # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
-    num1 = length(pt.xl)
-    num2 = length(pt.xu)
-    for i=1:num1
+#    num1 = length(pt.xl)
+#    num2 = length(pt.xu)
+    for i=1:n
         if pt.xl[i] < 0 || pt.zl[i] < 0
             return false
         end
     end
-    for i=1:num2
+    for i=1:n
         if pt.xu[i] < 0 || pt.zu[i] < 0
             return false
         end
@@ -229,8 +240,20 @@ function Broyden_parada2(mpc, cp_mu, it, it_max, eps, sig)
     return stop, convergence, accept_point
 end 
 
+function deconcatenate(mpc, b)
+    m = mpc.pt.m
+    n = mpc.pt.n
+    rp = b[1:m]
+    rl = b[m+1:m+n]
+    ru = b[m+n+1:m+2*n] 
+    rd = b[m+2*n+1:m+3*n] 
+    rxzl = b[m+3*n+1:m+4*n] 
+    rxzu = b[m+4*n+1:m+5*n] 
+    return rp, rl, ru, rd, rxzl, rxzu
+end
 
-function Broyden2!(mpc, alpha, sig, cp_mu, it_max, eps)
+function Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
+  mpc = GB_mpc.qnc
   pt = mpc.pt
   Δ = mpc.Δ
   Δc = mpc.Δc
@@ -239,7 +262,11 @@ function Broyden2!(mpc, alpha, sig, cp_mu, it_max, eps)
 
   it = 1
 
-  # Recuperar a jacobiana original
+  # Calcula os resíduos no ponto atual (lado direito em solve_newton_system!)
+
+    compute_residuals!(mpc)
+
+  # Recuperar a jacobiana original (na função solve_newton_system!, a jacobiana é calculada no ponto atual guardado em mpc. Isto significa que não estaríamos usando a mesma jacobiana do passo preditor. Portanto, ao retornar ao ponto anterior ao passo preditor, estamos garantindo que a mesma jacobiana do passo preditor será utilizada como B_0 pelo método de Broyden)
 
   pt.x  .-= alpha .* Δ.x
   pt.xl .-= alpha .* Δ.xl
@@ -274,7 +301,29 @@ function Broyden2!(mpc, alpha, sig, cp_mu, it_max, eps)
         return accept_point
     end
 
-    # código para as próximas iterações
+#    # Calcula os resíduos no ponto atual (lado direito em solve_newton_system!)
+#
+#    compute_residuals!(mpc)
+#    
+#    # Copia o ponto atual
+#
+#    cp_x2  = copy(pt.x)
+#    cp_xl2 = copy(pt.xl)
+#    cp_xu2 = copy(pt.xu)
+#    cp_y2  = copy(pt.y)
+#    cp_zl2 = copy(pt.zl)
+#    cp_zu2 = copy(pt.zu)
+#
+#    # Retorna ao ponto anterior ao passo preditor
+#
+#    pt.x  .= cp_x 
+#    pt.xl .= cp_xl
+#    pt.xu .= cp_xu
+#    pt.y  .= cp_y 
+#    pt.zl .= cp_zl
+#    pt.zu .= cp_zu
+#
+#    ldiv!(GB_mpc, sig)
 
     it += 1
 
@@ -606,6 +655,9 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 #    println("")
 ###    J_temp = copy(Jw) # TODO: Remover a necessidade de guardar a Jacobiana como uma matriz normal (não GoodBroyden) para o método alternativo, e passar a matriz GoodBroyden para ele.
 ###    Jw = GoodBroyden(Jw, it_max)
+
+GB_mpc = GoodBroyden(mpc, it_max)
+
     # Passo 1
 ####    d = - (fatoracao \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
 ###    d = - (J_temp \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
@@ -657,7 +709,7 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 #    alpha0 = alpha
 #  end
 
-alpha = mpc.αp * params.StepDampFactor # Pressupõe αp = αd
+alpha = GB_mpc.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 
   println("")
     # Passo 3
@@ -706,13 +758,13 @@ alpha = mpc.αp * params.StepDampFactor # Pressupõe αp = αd
 #        println("Ponto inicial do Broyden")
 #        display(w_n)
 
-        compute_residuals!(mpc) # Atualiza os resíduos
+        compute_residuals!(GB_mpc.qnc) # Atualiza os resíduos
         update_mu!(pt) # Atualiza mu só pra printar ele
         println("mu (após newton) = ", pt.μ)
         pt.μ = cp_mu # Retorna pro valor original
 
 #        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
-        b_status = Broyden2!(mpc, alpha, sig, cp_mu, it_max, eps)
+        b_status = Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
 #        Jw.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
 #        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
