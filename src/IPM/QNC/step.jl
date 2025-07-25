@@ -82,7 +82,8 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   # Corrector
 #  corretor_qn = true
 #  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
-  @timeit mpc.timer "Corrector" all_tests_failed = Quasi_Newton_Corrector!(mpc, params)
+  #@timeit mpc.timer "Corrector" all_tests_failed_old = Quasi_Newton_Corrector!(mpc, params)
+  @timeit mpc.timer "Corrector" Quasi_Newton_Corrector!(mpc, params)
 #  if false#all_tests_failed == true
 #    pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
 #    #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
@@ -260,7 +261,7 @@ end
 
 Compute maximum primal-dual step length.
 """
-function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:AbstractVector{T}}
+function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:AbstractVector{T}} # Eu modifiquei essa funcao
   axl = max_step_length(pt.xl, δ.xl)
   axu = max_step_length(pt.xu, δ.xu)
   azl = max_step_length(pt.zl, δ.zl)
@@ -330,7 +331,7 @@ end
 """
     compute_corrector!(mpc::MPC) -> Nothing
 """
-function compute_corrector!(mpc::QNC{T, Tv}, σ) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
+function compute_corrector!(mpc::QNC{T, Tv}, σ, alpha, xlb, xub, zlb, zub) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
 
   # WARNING: Eu acho que o deslocamento que estou fazendo no ponto pode estar alterando a matriz jacobiana, então apenas recalcular os resíduos não vai ser suficiente. 
 
@@ -339,6 +340,7 @@ function compute_corrector!(mpc::QNC{T, Tv}, σ) where{T, Tv<:AbstractVector{T}}
   pt = mpc.pt
   Δ = mpc.Δ
   Δc = mpc.Δc
+
 
   # Step length for affine-scaling direction
 #  αp_aff, αd_aff = mpc.αp, mpc.αd
@@ -350,13 +352,11 @@ function compute_corrector!(mpc::QNC{T, Tv}, σ) where{T, Tv<:AbstractVector{T}}
 
   # Newton RHS
   # compute_predictor! was called ⟹ ξp, ξl, ξu, ξd are already set
-  @. mpc.ξxzl = (σ * pt.μ .- Δ.xl .* Δ.zl .- pt.xl .* pt.zl) .* dat.lflag
-  @. mpc.ξxzu = (σ * pt.μ .- Δ.xu .* Δ.zu .- pt.xu .* pt.zu) .* dat.uflag
+  @. mpc.ξxzl = (σ * pt.μ .- xlb .* zlb) .* dat.lflag
+  @. mpc.ξxzu = (σ * pt.μ .- xub .* zub) .* dat.uflag
 
   # Compute corrector
-  @timeit mpc.timer "Newton" solve_newton_system!(mpc.Δc, mpc,
-                                                  mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu
-                                                 )
+  @timeit mpc.timer "Newton" solve_newton_system!(mpc.Δc, mpc, mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
 
   # TODO: check Newton system residuals, perform iterative refinement if needed
   return nothing

@@ -19,7 +19,7 @@ end
 
 Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden update.
 """
-LinearAlgebra.ldiv!(A::GoodBroyden, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
+LinearAlgebra.ldiv!(A::GoodBroyden, sig, alpha, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
 
     # Resolve o caso base
     println("⏰ Tempo para resolver um sistema envolvendo B_0:")
@@ -46,7 +46,9 @@ LinearAlgebra.ldiv!(A::GoodBroyden, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
     pt.zl .= cp_zl
     pt.zu .= cp_zu
 
-    compute_corrector!(A.qnc, sig) # Pressupõe que o lado direito correto já está armazenado em qnc. Também pressupõe que o ponto atual armazenado em qnc seja o ponto antes do passo preditor (pois caso contrário, B_0 não seria a jacobiana utilizada no passo preditor).
+  # O comando abaixo pressupõe que o lado direito correto já está armazenado em qnc. Também pressupõe que o ponto atual armazenado em qnc seja o ponto antes do passo preditor (pois caso contrário, B_0 não seria a jacobiana utilizada no passo preditor).
+  mpc = A.qnc
+  solve_newton_system!(mpc.Δc, mpc, mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
 
     pt.x  .=  cp_x_b 
     pt.xl .= cp_xl_b
@@ -229,12 +231,7 @@ function positivity_test(mpc)
 #    num1 = length(pt.xl)
 #    num2 = length(pt.xu)
     for i=1:n
-        if pt.xl[i] < 0 || pt.zl[i] < 0
-            return false
-        end
-    end
-    for i=1:n
-        if pt.xu[i] < 0 || pt.zu[i] < 0
+      if (pt.xl[i] < 0) || (pt.zl[i] < 0) || (pt.xu[i] < 0) || (pt.zu[i] < 0)
             return false
         end
     end
@@ -245,6 +242,7 @@ function decrease_and_feasibility_test(mpc, cp_mu, sig)
     pt = mpc.pt
     update_mu!(pt)
     if (pt.μ <= 0.5 * (1.0 + sig) * cp_mu) && positivity_test(mpc)
+        pt.μ = cp_mu
         return true
     end
     pt.μ = cp_mu
@@ -252,7 +250,7 @@ function decrease_and_feasibility_test(mpc, cp_mu, sig)
 end
 
 function Broyden_convergence_test(mpc, eps = 1.0e-8)
-    for v in (mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
+    for v in (mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu) # soh faz sentido se eu recalcular os residuos antes de rodar essa funcao
         if norm(v) > eps
             return false
         end
@@ -290,8 +288,9 @@ function deconcatenate(mpc, b)
     return rp, rl, ru, rd, rxzl, rxzu
 end
 
-function Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
-  mpc = GB_mpc.qnc
+function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
+  mpc = GB_struct.qnc
+  dat = mpc.dat
   pt = mpc.pt
   Δ = mpc.Δ
   Δc = mpc.Δc
@@ -300,12 +299,15 @@ function Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, c
 
   it = 1
 
-  # Calcula os resíduos no ponto atual (lado direito em solve_newton_system!)
+  # Calcula os resíduos no ponto atual (parte do lado direito em solve_newton_system!)
 
     compute_residuals!(mpc)
+    pt.μ = cp_mu
+  @. mpc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
+  @. mpc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
  
   #compute_corrector!(mpc, sig) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
-  ldiv!(GB_mpc, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
+  ldiv!(GB_struct, alpha, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
 
   # Atualiza o ponto
    
@@ -318,17 +320,17 @@ function Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, c
 
   sb = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
-  # Calcula u = -F_{sigma * mu} (w + d_b)
+  # Calcula -F_{sigma * mu} (w + d_b) para depois calcular u
 
   compute_residuals!(mpc)
-#  @. mpc.ξxzl = (sig * pt.μ .- Δ.xl .* Δ.zl .- pt.xl .* pt.zl) .* mpc.dat.lflag
-#  @. mpc.ξxzu = (sig * pt.μ .- Δ.xu .* Δ.zu .- pt.xu .* pt.zu) .* mpc.dat.uflag
-
-#  ldiv!(GB_mpc, sig) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
-  ldiv!(GB_mpc, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
+    pt.μ = cp_mu
+  @. mpc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
+  @. mpc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
+ 
+  ldiv!(GB_struct, alpha, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
   u = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
-  update!(GB_mpc, sb, u)
+  update!(GB_struct, sb, u)
 
   it += 1
 
@@ -346,12 +348,12 @@ function Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, c
         return accept_point
     end
 
-    sb = (dot(GB_mpc.sb[it-1], GB_mpc.u[it-1]) / GB_mpc.rho[it-1]) * GB_mpc.u[it-1]
-    sb .= sb .+ GB_mpc.u[it-1]
+    sb = (dot(GB_struct.sb[it-1], GB_struct.u[it-1]) / GB_struct.rho[it-1]) * GB_struct.u[it-1]
+    sb .= sb .+ GB_struct.u[it-1]
 
     # Atualizar o ponto
 
-    Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(GB_mpc.qnc, sb)
+    Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(GB_struct.qnc, sb)
      
     pt.x  .+=  Δc.x
     pt.xl .+=  Δc.xl
@@ -363,10 +365,14 @@ function Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, c
     # Calcular novo u
 
     compute_residuals!(mpc)
-    ldiv!(GB_mpc, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
+    pt.μ = cp_mu
+  @. mpc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
+  @. mpc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
+
+    ldiv!(GB_struct, alpha, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
     u = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
     
-    update!(GB_mpc, sb, u)
+    update!(GB_struct, sb, u)
 
     it += 1
 
@@ -439,7 +445,7 @@ function compute_first_system!(v, rp, rl, ru, rd, xl, xu, zl, zu, tau, mpc::MPC)
     return nothing
 end
 
-function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5)
+function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 100) # it_max padrao eh 5
 
     #1-1.0e-4
 
@@ -699,7 +705,8 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 ###    J_temp = copy(Jw) # TODO: Remover a necessidade de guardar a Jacobiana como uma matriz normal (não GoodBroyden) para o método alternativo, e passar a matriz GoodBroyden para ele.
 ###    Jw = GoodBroyden(Jw, it_max)
 
-GB_mpc = GoodBroyden(mpc, it_max)
+GB_struct = GoodBroyden(mpc, it_max)
+    qncGB = GB_struct.qnc
 
     # Passo 1
 ####    d = - (fatoracao \ F_tau(w, 0)) #vcat(mpc.Δ.x, mpc.Δ.y, dz) # Espaço para otimização 
@@ -752,7 +759,7 @@ GB_mpc = GoodBroyden(mpc, it_max)
 #    alpha0 = alpha
 #  end
 
-alpha = GB_mpc.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
+alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 
   println("")
     # Passo 3
@@ -791,24 +798,24 @@ alpha = GB_mpc.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 #        end
 
     # Anda na direção preditora, com o tamanho de passo especificado
-    pt.x  .+= alpha .* Δ.x
-    pt.xl .+= alpha .* Δ.xl
-    pt.xu .+= alpha .* Δ.xu
-    pt.y  .+= alpha .* Δ.y
-    pt.zl .+= alpha .* Δ.zl
-    pt.zu .+= alpha .* Δ.zu
+    qncGB.pt.x  .+= alpha .* Δ.x
+    qncGB.pt.xl .+= alpha .* Δ.xl
+    qncGB.pt.xu .+= alpha .* Δ.xu
+    qncGB.pt.y  .+= alpha .* Δ.y
+    qncGB.pt.zl .+= alpha .* Δ.zl
+    qncGB.pt.zu .+= alpha .* Δ.zu
 
 #        println("Ponto inicial do Broyden")
 #        display(w_n)
 
-        compute_residuals!(GB_mpc.qnc) # Atualiza os resíduos
-        update_mu!(pt) # Atualiza mu só pra printar ele
-        println("mu (após newton) = ", pt.μ)
-        pt.μ = cp_mu # Retorna pro valor original
+        compute_residuals!(qncGB) # Atualiza os resíduos
+        update_mu!(qncGB.pt) # Atualiza mu só pra printar ele
+        println("mu (após newton) = ", qncGB.pt.μ)
+        qncGB.pt.μ = cp_mu # Retorna pro valor original
 
 #        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
-        b_status = Broyden2!(GB_mpc, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
-        GB_mpc.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
+        b_status = Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
+        GB_struct.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
 #        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
 #        println("Status (Broyden) = ", b_status)
@@ -823,17 +830,17 @@ alpha = GB_mpc.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 
         # Descarta os deslocamentos feitos durante o método de Broyden e retorna mu para seu valor original
 
-        pt.x  .= cp_x
-        pt.xl .= cp_xl
-        pt.xu .= cp_xu
-        pt.y  .= cp_y
-        pt.zl .= cp_zl
-        pt.zu .= cp_zu
-        pt.μ = cp_mu
+        qncGB.pt.x  .= cp_x
+        qncGB.pt.xl .= cp_xl
+        qncGB.pt.xu .= cp_xu
+        qncGB.pt.y  .= cp_y
+        qncGB.pt.zl .= cp_zl
+        qncGB.pt.zu .= cp_zu
+        qncGB.pt.μ = cp_mu
         
 ###### AQUI COMEÇA O MÉTODO ALTERNATIVO
 
-        if t == 3
+        if t == 100 # Provisorio. O valor padrao eh 3.
             error("É necessário utilizar o método alternativo, mas por enquanto ele está desligado.")
         end
 
@@ -940,12 +947,12 @@ alpha = GB_mpc.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 #    mpc.Δc.y .= w_n[n+1:n+m] # talvez precise atualizar mais coisas em delta_c
 
     # Calcula a direção resultante após o passo preditor e as iterações do método de Broyden
-    Δc.x =  pt.x - cp_x
-    Δc.y =  pt.y - cp_y
-    Δc.xl = pt.xl - cp_xl
-    Δc.xu = pt.xu - cp_xu
-    Δc.zl = pt.zl - cp_zl
-    Δc.zu = pt.zu - cp_zu
+    Δc.x =  qncGB.pt.x - cp_x
+    Δc.y =  qncGB.pt.y - cp_y
+    Δc.xl = qncGB.pt.xl - cp_xl
+    Δc.xu = qncGB.pt.xu - cp_xu
+    Δc.zl = qncGB.pt.zl - cp_zl
+    Δc.zu = qncGB.pt.zu - cp_zu
 
     # Retorna o ponto para sua posição inicial.
         pt.x  .= cp_x
