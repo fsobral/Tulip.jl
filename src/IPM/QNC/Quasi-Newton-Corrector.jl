@@ -303,6 +303,10 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
   # Calcula os resíduos no ponto atual (parte do lado direito em solve_newton_system!)
 
     compute_residuals!(mpc)
+    copyto!(mpc.ξp, mpc.res.rp)
+    copyto!(mpc.ξl, mpc.res.rl)
+    copyto!(mpc.ξu, mpc.res.ru)
+    copyto!(mpc.ξd, mpc.res.rd)
     pt.μ = cp_mu
   @. mpc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
   @. mpc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
@@ -324,6 +328,10 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
   # Calcula -F_{sigma * mu} (w + d_b) para depois calcular u
 
   compute_residuals!(mpc)
+    copyto!(mpc.ξp, mpc.res.rp)
+    copyto!(mpc.ξl, mpc.res.rl)
+    copyto!(mpc.ξu, mpc.res.ru)
+    copyto!(mpc.ξd, mpc.res.rd)
     pt.μ = cp_mu
   @. mpc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
   @. mpc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
@@ -341,6 +349,8 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
 
     while true # Main loop
 
+    println("Broyden2 it: ", it)
+
     # Stopping criteria
 
     stop, convergence, accept_point = Broyden_parada2(mpc, cp_mu, it, it_max, eps, sig)
@@ -349,7 +359,7 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
         return accept_point
     end
 
-#    return accept_point # nao deixa executar mais que um passo de broyden
+    #return accept_point # nao deixa executar mais que um passo de broyden
 
     sb = (dot(GB_struct.sb[it-1], GB_struct.u[it-1]) / GB_struct.rho[it-1]) * GB_struct.u[it-1]
     sb .= sb .+ GB_struct.u[it-1]
@@ -368,6 +378,10 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
     # Calcular novo u
 
     compute_residuals!(mpc)
+    copyto!(mpc.ξp, mpc.res.rp)
+    copyto!(mpc.ξl, mpc.res.rl)
+    copyto!(mpc.ξu, mpc.res.ru)
+    copyto!(mpc.ξd, mpc.res.rd)
     pt.μ = cp_mu
   @. mpc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
   @. mpc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
@@ -448,7 +462,7 @@ function compute_first_system!(v, rp, rl, ru, rd, xl, xu, zl, zu, tau, mpc::MPC)
     return nothing
 end
 
-function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 100) # it_max padrao eh 5
+function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5) # it_max padrao eh 5
 
     #1-1.0e-4
 
@@ -811,17 +825,21 @@ alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 #        println("Ponto inicial do Broyden")
 #        display(w_n)
 
-        compute_residuals!(qncGB) # Atualiza os resíduos
-        update_mu!(qncGB.pt) # Atualiza mu só pra printar ele
+#        compute_residuals!(qncGB) # Atualiza os resíduos
+#        copyto!(mpc.ξp, mpc.res.rp)
+#        copyto!(mpc.ξl, mpc.res.rl)
+#        copyto!(mpc.ξu, mpc.res.ru)
+#        copyto!(mpc.ξd, mpc.res.rd)
+        #update_mu!(qncGB.pt) # Atualiza mu só pra printar ele
         #println("mu (após newton) = ", qncGB.pt.μ)
-        qncGB.pt.μ = cp_mu # Retorna pro valor original
+        #qncGB.pt.μ = cp_mu # Retorna pro valor original
 
 #        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
         b_status = Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
         GB_struct.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
 #        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
-#        println("Status (Broyden) = ", b_status)
+        println("Status (Broyden) = ", b_status)
         if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
             break
         end
@@ -843,7 +861,7 @@ alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
         
 ###### AQUI COMEÇA O MÉTODO ALTERNATIVO
 
-        if t == 100 # Provisorio. O valor padrao eh 3.
+        if t == 3 # Provisorio. O valor padrao eh 3.
             error("É necessário utilizar o método alternativo, mas por enquanto ele está desligado.")
         end
 
