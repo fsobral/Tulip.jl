@@ -22,7 +22,7 @@ Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden up
 LinearAlgebra.ldiv!(A::GoodBroyden, sig, alpha, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
 
     # Resolve o caso base
-    println("⏰ Tempo para resolver um sistema envolvendo B_0:")
+    #println("⏰ Tempo para resolver um sistema envolvendo B_0:")
     
     pt = A.qnc.pt
     m = pt.m
@@ -59,18 +59,19 @@ LinearAlgebra.ldiv!(A::GoodBroyden, sig, alpha, cp_x, cp_xl, cp_xu, cp_y, cp_zl,
 
 #    return nothing # interrompe antes da parte problematica
 
-    Δc = A.qnc.Δc
+    Δc = mpc.Δc
 
     b = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # Constrói o lado direito
 
-    println("")
-    println("⏰ Tempo dedicado a resolver o sistema original (Broyden)")
+    #println("")
+    #println("⏰ Tempo dedicado a resolver o sistema original (Broyden)")
     mm = A.size[]
     u = nothing
     sb = nothing
     rho = nothing
     prod = nothing
-    @time for i = 1:mm
+    #@time for i = 1:mm
+    for i = 1:mm
             u = A.u[i] # Sem intenção de fazer cópias
             sb = A.sb[i] # Sem intenção de fazer cópias
       #     rho = A.rho[i]
@@ -90,7 +91,7 @@ LinearAlgebra.ldiv!(A::GoodBroyden, sig, alpha, cp_x, cp_xl, cp_xu, cp_y, cp_zl,
             end
 
           end
-    println("")
+    #println("")
 
 #    rp, rl, ru, rd, rxzl, rxzu = deconcatenate(A.qnc, b)
     Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(A.qnc, b)
@@ -220,7 +221,7 @@ function Broyden(F_tau, B, w, mu_wk, sig, sig_max, m, n, eps, it_max) # WARNING:
         update!(B, sb, -F_tau(w, sig*mu_wk))
     end
     mpc.nitb += it
-    println("Nº de iterações de Broyden: ", it)
+    #println("Nº de iterações de Broyden: ", it)
     return status
 end
 
@@ -347,6 +348,8 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
         mpc.nitb += it # contabiliza as iterações de Broyden
         return accept_point
     end
+
+#    return accept_point # nao deixa executar mais que um passo de broyden
 
     sb = (dot(GB_struct.sb[it-1], GB_struct.u[it-1]) / GB_struct.rho[it-1]) * GB_struct.u[it-1]
     sb .= sb .+ GB_struct.u[it-1]
@@ -761,12 +764,12 @@ GB_struct = GoodBroyden(mpc, it_max)
 
 alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 
-  println("")
+ # println("")
     # Passo 3
 #    println("⏰ Tempo gasto para encontrar sigma para o passo corretor:")
     # sig = 0.5*sig_max
     sig = min(sig_max, 1.0 - alpha) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante
-    println("")
+    #println("")
     # Passo 4
 #    mu_wk = dot(x, s)/n
     cp_x, cp_y, cp_xl, cp_xu, cp_zl, cp_zu, cp_mu = copy(pt.x), copy(pt.y), copy(pt.xl), copy(pt.xu), copy(pt.zl), copy(pt.zu), copy(pt.μ) # Fazendo cópia do iterando
@@ -775,9 +778,9 @@ alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 
     while true
         mpc.n_tent_broyden += 1
-        println("Testagem: ", t)
-        println("Alfa = ", alpha)
-        println("Sigma = ", sig)
+        #println("Testagem: ", t)
+        #println("Alfa = ", alpha)
+        #println("Sigma = ", sig)
 
 #        w_n .= w + alpha*d
       # Comentei esse teste, pois não parece essencial. Mas, se precisar, eu o adapto para o novo formato.
@@ -810,7 +813,7 @@ alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
 
         compute_residuals!(qncGB) # Atualiza os resíduos
         update_mu!(qncGB.pt) # Atualiza mu só pra printar ele
-        println("mu (após newton) = ", qncGB.pt.μ)
+        #println("mu (após newton) = ", qncGB.pt.μ)
         qncGB.pt.μ = cp_mu # Retorna pro valor original
 
 #        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)

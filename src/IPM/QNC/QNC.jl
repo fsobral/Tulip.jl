@@ -250,7 +250,7 @@ function update_solver_status2!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) whe
     # Check for optimal solution
 
     z = pt.z#mpc.dat.c - mpc.dat.A'*pt.y
-    println("mu = ", abs(dot(pt.x, z))/length(z))
+    #println("mu = ", abs(dot(pt.x, z))/length(z))
     menor_entrada = minimum([minimum(pt.x), minimum(z)])
     if  abs(dot(pt.x, z)) <= 1.0e-8*length(z) && menor_entrada > -1.0e-4# parar quando mu zerar
         mpc.primal_status = Sln_Optimal
