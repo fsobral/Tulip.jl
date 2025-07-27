@@ -289,7 +289,7 @@ function deconcatenate(mpc, b)
     return rp, rl, ru, rd, rxzl, rxzu
 end
 
-function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
+function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, b_alt = false)
   mpc = GB_struct.qnc
   dat = mpc.dat
   pt = mpc.pt
@@ -313,6 +313,16 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
  
   #compute_corrector!(mpc, sig) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
   ldiv!(GB_struct, alpha, sig, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu) # Pressupõe que os resíduos após o passo de Newton estejam guardados em mpc
+
+  if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
+    alpha_b = max_step_length_pd(mpc.pt, mpc.Δc)[1] * 0.9995 # trocar pelo factor do tulip
+    Δc.x  .= alpha_b .* Δc.x 
+    Δc.xl .= alpha_b .* Δc.xl
+    Δc.xu .= alpha_b .* Δc.xu
+    Δc.y  .= alpha_b .* Δc.y 
+    Δc.zl .= alpha_b .* Δc.zl
+    Δc.zu .= alpha_b .* Δc.zu
+  end
 
   # Atualiza o ponto
    
@@ -355,6 +365,7 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
 
     stop, convergence, accept_point = Broyden_parada2(mpc, cp_mu, it, it_max, eps, sig)
     if stop == true
+      println("Parou por que? stop / convergence / accept_point : ", (stop, convergence, accept_point))
         mpc.nitb += it # contabiliza as iterações de Broyden
         return accept_point
     end
@@ -367,6 +378,16 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
     # Atualizar o ponto
 
     Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(GB_struct.qnc, sb)
+
+    if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
+      alpha_b = max_step_length_pd(mpc.pt, mpc.Δc)[1] * 0.9995 # falta usar o factor do tulip
+      Δc.x  .= alpha_b .* Δc.x 
+      Δc.xl .= alpha_b .* Δc.xl
+      Δc.xu .= alpha_b .* Δc.xu
+      Δc.y  .= alpha_b .* Δc.y 
+      Δc.zl .= alpha_b .* Δc.zl
+      Δc.zu .= alpha_b .* Δc.zu
+    end
      
     pt.x  .+=  Δc.x
     pt.xl .+=  Δc.xl
@@ -835,7 +856,7 @@ alpha = GB_struct.qnc.αp * params.StepDampFactor # Pressupõe αp = αd
         #qncGB.pt.μ = cp_mu # Retorna pro valor original
 
 #        b_status = Broyden(F_tau, Jw, w_n, mu_wk, sig, sig_max, m, n, eps, it_max)
-        b_status = Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu)
+        b_status = Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, true) # TODO: Remover o true no final para utilizar o metodo original, e depois reescrever o metodo alternativo para usar esta funcao com o true no final.
         GB_struct.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
 #        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
