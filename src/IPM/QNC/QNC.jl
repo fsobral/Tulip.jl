@@ -398,22 +398,22 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
       break
     end
 
-    println("")
-    println("⚠️ Iteração (algoritmo principal): ", mpc.niter + 1)
+    #println("")
+    #println("⚠️ Iteração (algoritmo principal): ", mpc.niter + 1)
 
     # TODO: step
     # For now, include the factorization in the step function
     # Q: should we use more arguments here?
     try
       @timeit mpc.timer "Step" compute_step!(mpc, params)
-      println("x=")
-      display(mpc.pt.x)
-      println("lambda=")
-      display(mpc.pt.y)
-      println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
-      println("Nº total de iterações de Broyden: ",   mpc.nitb)
-      println("Nº total de correções alternativas: ", mpc.n_corr_alt)
-      println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
+      #println("x=")
+      #display(mpc.pt.x)
+      #println("lambda=")
+      #display(mpc.pt.y)
+      #println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
+      #println("Nº total de iterações de Broyden: ",   mpc.nitb)
+      #println("Nº total de correções alternativas: ", mpc.n_corr_alt)
+      #println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
     catch err
 
       if isa(err, PosDefException) || isa(err, SingularException)
@@ -439,7 +439,7 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
 
   # TODO: trocar as saidas para coisas desse tipo
   # params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
-  println("Nº de iterações (algoritmo principal): ", mpc.niter)
+  #println("Nº de iterações (algoritmo principal): ", mpc.niter)
 
   # TODO: print message based on termination status
   params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
@@ -466,16 +466,16 @@ function compute_starting_point2(mpc::QNC{T}, μ = 10.0) where{T} # encontra um 
 
   pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
   z = pt.z
-  println("<< PONTO INICIAL >>")
-  println("x=")
-  display(pt.x)
-  println("lambda=")
-  display(pt.y)
-  println("s=")
-  display(pt.z)
+  #println("<< PONTO INICIAL >>")
+  #println("x=")
+  #display(pt.x)
+  #println("lambda=")
+  #display(pt.y)
+  #println("s=")
+  #display(pt.z)
 
-  println("")
-  println("mu_0 = ", dot(pt.x, z)/n)
+  #println("")
+  #println("mu_0 = ", dot(pt.x, z)/n)
 
   if min(minimum(pt.x), minimum(pt.z)) <= 0
     error("O Ponto inicial não está em F_0!")

@@ -359,13 +359,13 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
 
   while true # Main loop
 
-    println("Broyden2 it: ", it)
+    #println("Broyden2 it: ", it)
 
     # Stopping criteria
 
     stop, convergence, accept_point = Broyden_parada2(mpc, cp_mu, it, it_max, eps, sig)
     if stop == true
-      println("Parou por que? stop / convergence / accept_point : ", (stop, convergence, accept_point))
+      #println("Parou por que? stop / convergence / accept_point : ", (stop, convergence, accept_point))
       mpc.nitb += it # contabiliza as iterações de Broyden
       if b_alt
         mpc.n_corr_alt += it
@@ -858,7 +858,7 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
     GB_struct.size = 0 # Resetar a estrutura GoodBroyden para a próxima iteração
 
     #        println("mu (final do broyden)=", dot(w_n[1:n], w_n[n+m+1:2n+m])/n)
-    println("Status (Broyden) = ", b_status)
+    #println("Status (Broyden) = ", b_status)
     if b_status == true # Se encontrar um ponto em F_0 com decrescimo de mu, pare.
       break
     end
@@ -886,7 +886,7 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 
     if t == 3 # 3 # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
       #            error("Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Tente outro ponto inicial que esteja mais próximo do caminho central ou tome sig_max ainda mais próximo de 1.")
-      println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
+      #println("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
       #  #            error("AVISO: Não foi possível determinar alpha e sigma de modo a obter a convergência do passo corretor. Isso pode ter ocorrido pois o ponto inicial não estava próximo o suficiente do caminho central. Para contornar isso, será aplicado um método quasi-newton alternativo.")
       #  mpc.n_corr_alt += 1
       #  an = alpha0
@@ -969,7 +969,28 @@ function Quasi_Newton_Corrector!(mpc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
       b_status = Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, params, true)
 
       if !(b_status)
-        error("Nem mesmo o metodo alternativo resolveu.")
+        #error("Nem mesmo o metodo alternativo resolveu.")
+        println("WARNING: O método alternativo falhou. Andando apenas na direção preditora, sem correções...")
+        
+        # Descarta os deslocamentos feitos durante o método de Broyden e retorna mu para seu valor original
+
+        qncGB.pt.x  .= cp_x
+        qncGB.pt.xl .= cp_xl
+        qncGB.pt.xu .= cp_xu
+        qncGB.pt.y  .= cp_y
+        qncGB.pt.zl .= cp_zl
+        qncGB.pt.zu .= cp_zu
+        qncGB.pt.μ = cp_mu
+
+        # Anda apenas na direção preditora
+
+        qncGB.pt.x  .+= alpha .* Δ.x
+        qncGB.pt.xl .+= alpha .* Δ.xl
+        qncGB.pt.xu .+= alpha .* Δ.xu
+        qncGB.pt.y  .+= alpha .* Δ.y
+        qncGB.pt.zl .+= alpha .* Δ.zl
+        qncGB.pt.zu .+= alpha .* Δ.zu
+
       end
 
       break
