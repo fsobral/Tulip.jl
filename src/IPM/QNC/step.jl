@@ -61,15 +61,15 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
 
   # Reconstruindo z e Δz
-#  z = zeros(n)
-#  dz = zeros(n)
-#  for i=1:n
-# #   z[i] = c[i] - dot(A[:, i], pt.y)
-#    dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
-#  end
-#  z = mpc.pt.z
+  #  z = zeros(n)
+  #  dz = zeros(n)
+  #  for i=1:n
+  # #   z[i] = c[i] - dot(A[:, i], pt.y)
+  #    dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
+  #  end
+  #  z = mpc.pt.z
 
-#  mpc.αp, mpc.αd = max_step_length_pd2(mpc.pt, Δ, z, dz) # Espaço para otimizar!
+  #  mpc.αp, mpc.αd = max_step_length_pd2(mpc.pt, Δ, z, dz) # Espaço para otimizar!
   #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
   #    if mpc.αp <= mpc.αd
   #        mpc.αd = mpc.αp
@@ -80,17 +80,17 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   # TODO: if step size is large enough, skip corrector
 
   # Corrector
-#  corretor_qn = true
-#  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
+  #  corretor_qn = true
+  #  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
   #@timeit mpc.timer "Corrector" all_tests_failed_old = Quasi_Newton_Corrector!(mpc, params)
   @timeit mpc.timer "Corrector" Quasi_Newton_Corrector!(mpc, params)
-#  if false#all_tests_failed == true
-#    pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
-#    #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
-#    compute_corrector!(mpc::MPC)
-#    mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δc)
-#    corretor_qn = false
-#  end
+  #  if false#all_tests_failed == true
+  #    pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
+  #    #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
+  #    compute_corrector!(mpc::MPC)
+  #    mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δc)
+  #    corretor_qn = false
+  #  end
 
   # TODO: the following is not needed if there are no additional corrections
   copyto!(Δ.x, Δc.x)
@@ -137,38 +137,38 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
     end
   end
 
-#    if corretor_qn == false
-#      # Update current iterate
-#      mpc.αp *= params.StepDampFactor
-#      mpc.αd *= params.StepDampFactor
-#      pt.x  .+= mpc.αp .* Δ.x
-#      pt.xl .+= mpc.αp .* Δ.xl
-#      pt.xu .+= mpc.αp .* Δ.xu
-#      pt.y  .+= mpc.αd .* Δ.y
-#      pt.zl .+= mpc.αd .* Δ.zl
-#      pt.zu .+= mpc.αd .* Δ.zu
-#      update_mu!(pt)
-#    else
-#      #nothing
-#  #    pt.x  .+= Δ.x
-#  #    pt.xl .+= Δ.xl
-#  #    pt.xu .+= Δ.xu
-#  #    pt.y  .+= Δ.y
-#  #    pt.zl .+= Δ.zl
-#  #    pt.zu .+= Δ.zu
-#  #    update_mu!(pt)
-#  end
+  #    if corretor_qn == false
+  #      # Update current iterate
+  #      mpc.αp *= params.StepDampFactor
+  #      mpc.αd *= params.StepDampFactor
+  #      pt.x  .+= mpc.αp .* Δ.x
+  #      pt.xl .+= mpc.αp .* Δ.xl
+  #      pt.xu .+= mpc.αp .* Δ.xu
+  #      pt.y  .+= mpc.αd .* Δ.y
+  #      pt.zl .+= mpc.αd .* Δ.zl
+  #      pt.zu .+= mpc.αd .* Δ.zu
+  #      update_mu!(pt)
+  #    else
+  #      #nothing
+  #  #    pt.x  .+= Δ.x
+  #  #    pt.xl .+= Δ.xl
+  #  #    pt.xu .+= Δ.xu
+  #  #    pt.y  .+= Δ.y
+  #  #    pt.zl .+= Δ.zl
+  #  #    pt.zu .+= Δ.zu
+  #  #    update_mu!(pt)
+  #  end
 
-    # Update current iterate
-#    mpc.αp *= params.StepDampFactor
-#    mpc.αd *= params.StepDampFactor
-    pt.x  .+=  Δ.x   # Modificado, pois esta já é a direção resultante ( alpha * direcao de Newton + correcão de Broyden) 
-    pt.xl .+=  Δ.xl  #
-    pt.xu .+=  Δ.xu  #
-    pt.y  .+=  Δ.y   #
-    pt.zl .+=  Δ.zl  #
-    pt.zu .+=  Δ.zu  #
-    update_mu!(pt)
+  # Update current iterate
+  #    mpc.αp *= params.StepDampFactor
+  #    mpc.αd *= params.StepDampFactor
+  pt.x  .+=  Δ.x   # Modificado, pois esta já é a direção resultante ( alpha * direcao de Newton + correcão de Broyden) 
+  pt.xl .+=  Δ.xl  #
+  pt.xu .+=  Δ.xu  #
+  pt.y  .+=  Δ.y   #
+  pt.zl .+=  Δ.zl  #
+  pt.zu .+=  Δ.zu  #
+  update_mu!(pt)
 
   return nothing
 end
@@ -343,12 +343,12 @@ function compute_corrector!(mpc::QNC{T, Tv}, σ, alpha, xlb, xub, zlb, zub) wher
 
 
   # Step length for affine-scaling direction
-#  αp_aff, αd_aff = mpc.αp, mpc.αd
-#  μₐ = (
-#        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
-#        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
-#       ) / pt.p
-#  σ = clamp((μₐ / pt.μ)^3, sqrt(eps(T)), one(T) - sqrt(eps(T)))
+  #  αp_aff, αd_aff = mpc.αp, mpc.αd
+  #  μₐ = (
+  #        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
+  #        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
+  #       ) / pt.p
+  #  σ = clamp((μₐ / pt.μ)^3, sqrt(eps(T)), one(T) - sqrt(eps(T)))
 
   # Newton RHS
   # compute_predictor! was called ⟹ ξp, ξl, ξu, ξd are already set

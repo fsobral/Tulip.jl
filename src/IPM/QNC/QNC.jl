@@ -5,95 +5,95 @@ Implements Quasi-Newton correctors.
 """
 mutable struct QNC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
 
-    # Problem data, in standard form
-    dat::IPMData{T, Tv, Tb, Ta}
+  # Problem data, in standard form
+  dat::IPMData{T, Tv, Tb, Ta}
 
-    # =================
-    #   Book-keeping
-    # =================
-    niter::Int                        # Number of IPM iterations
-    solver_status::TerminationStatus  # Optimization status
-    primal_status::SolutionStatus     # Primal solution status
-    dual_status::SolutionStatus       # Dual   solution status
+  # =================
+  #   Book-keeping
+  # =================
+  niter::Int                        # Number of IPM iterations
+  solver_status::TerminationStatus  # Optimization status
+  primal_status::SolutionStatus     # Primal solution status
+  dual_status::SolutionStatus       # Dual   solution status
 
-    primal_objective::T  # Primal bound: c'x
-    dual_objective::T    # Dual bound: b'y + l' zl - u'zu
+  primal_objective::T  # Primal bound: c'x
+  dual_objective::T    # Dual bound: b'y + l' zl - u'zu
 
-    timer::TimerOutput
+  timer::TimerOutput
 
-    n_tent_broyden::Int # numero de tentativas do broyden
-    nitb::Int           # numero total de iterações de Broyden
-    n_corr_alt::Int     # numero total de utilizações do método alternativo
-    n_corr_jac::Int     # numero total de correções da jacobiana
+  n_tent_broyden::Int # numero de tentativas do broyden
+  nitb::Int           # numero total de iterações de Broyden
+  n_corr_alt::Int     # numero total de utilizações do método alternativo
+  n_corr_jac::Int     # numero total de correções da jacobiana
 
-    #=====================
-    Working memory
-    =====================#
-    pt::Point{T, Tv}       # Current primal-dual iterate
-    res::Residuals{T, Tv}  # Residuals at current iterate
+  #=====================
+  Working memory
+  =====================#
+  pt::Point{T, Tv}       # Current primal-dual iterate
+  res::Residuals{T, Tv}  # Residuals at current iterate
 
-    Δ::Point{T, Tv}   # Predictor
-    Δc::Point{T, Tv}  # Corrector
+  Δ::Point{T, Tv}   # Predictor
+  Δc::Point{T, Tv}  # Corrector
 
-    # Step sizes
-    αp::T
-    αd::T
+  # Step sizes
+  αp::T
+  αd::T
 
-    # Newton system RHS
-    ξp::Tv
-    ξl::Tv
-    ξu::Tv
-    ξd::Tv
-    ξxzl::Tv
-    ξxzu::Tv
+  # Newton system RHS
+  ξp::Tv
+  ξl::Tv
+  ξu::Tv
+  ξd::Tv
+  ξxzl::Tv
+  ξxzu::Tv
 
-    # KKT solver
-    kkt::Tk
-    regP::Tv  # Primal regularization
-    regD::Tv  # Dual regularization
+  # KKT solver
+  kkt::Tk
+  regP::Tv  # Primal regularization
+  regD::Tv  # Dual regularization
 
-    function QNC(
-            dat::IPMData{T, Tv, Tb, Ta}, kkt_options::KKTOptions{T}
-        ) where{T, Tv<:AbstractVector{T}, Tb<:AbstractVector{Bool}, Ta<:AbstractMatrix{T}}
+  function QNC(
+      dat::IPMData{T, Tv, Tb, Ta}, kkt_options::KKTOptions{T}
+    ) where{T, Tv<:AbstractVector{T}, Tb<:AbstractVector{Bool}, Ta<:AbstractMatrix{T}}
 
-        m, n = dat.nrow, dat.ncol
-        p = sum(dat.lflag) + sum(dat.uflag)
+    m, n = dat.nrow, dat.ncol
+    p = sum(dat.lflag) + sum(dat.uflag)
 
-        # Working memory
-        pt  = Point{T, Tv}(m, n, p, hflag=false)
-        res = Residuals(
-                        tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n),
-                        tzeros(Tv, n), zero(T),
-                        zero(T), zero(T), zero(T), zero(T), zero(T)
-                       )
-        Δ  = Point{T, Tv}(m, n, p, hflag=false)
-        Δc = Point{T, Tv}(m, n, p, hflag=false)
+    # Working memory
+    pt  = Point{T, Tv}(m, n, p, hflag=false)
+    res = Residuals(
+                    tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n),
+                    tzeros(Tv, n), zero(T),
+                    zero(T), zero(T), zero(T), zero(T), zero(T)
+                   )
+    Δ  = Point{T, Tv}(m, n, p, hflag=false)
+    Δc = Point{T, Tv}(m, n, p, hflag=false)
 
-        # Newton RHS
-        ξp = tzeros(Tv, m)
-        ξl = tzeros(Tv, n)
-        ξu = tzeros(Tv, n)
-        ξd = tzeros(Tv, n)
-        ξxzl = tzeros(Tv, n)
-        ξxzu = tzeros(Tv, n)
+    # Newton RHS
+    ξp = tzeros(Tv, m)
+    ξl = tzeros(Tv, n)
+    ξu = tzeros(Tv, n)
+    ξd = tzeros(Tv, n)
+    ξxzl = tzeros(Tv, n)
+    ξxzu = tzeros(Tv, n)
 
-        # Initial regularizations
-        regP = tones(Tv, n)
-        regD = tones(Tv, m)
+    # Initial regularizations
+    regP = tones(Tv, n)
+    regD = tones(Tv, m)
 
-        kkt = KKT.setup(dat.A, kkt_options.System, kkt_options.Backend)
-        Tk = typeof(kkt)
+    kkt = KKT.setup(dat.A, kkt_options.System, kkt_options.Backend)
+    Tk = typeof(kkt)
 
-        return new{T, Tv, Tb, Ta, Tk}(dat,
-                                      0, Trm_Unknown, Sln_Unknown, Sln_Unknown,
-                                      T(Inf), T(-Inf),
-                                      TimerOutput(),
-                                      0, 0, 0, 0,
-                                      pt, res, Δ, Δc, zero(T), zero(T),
-                                      ξp, ξl, ξu, ξd, ξxzl, ξxzu,
-                                      kkt, regP, regD
-                                     )
-    end
+    return new{T, Tv, Tb, Ta, Tk}(dat,
+                                  0, Trm_Unknown, Sln_Unknown, Sln_Unknown,
+                                  T(Inf), T(-Inf),
+                                  TimerOutput(),
+                                  0, 0, 0, 0,
+                                  pt, res, Δ, Δc, zero(T), zero(T),
+                                  ξp, ξl, ξu, ξd, ξxzl, ξxzu,
+                                  kkt, regP, regD
+                                 )
+  end
 
 end
 
@@ -106,45 +106,45 @@ In-place computation of primal-dual residuals at point `pt`.
 """
 function compute_residuals!(mpc::QNC{T}) where{T}
 
-    pt, res = mpc.pt, mpc.res
-    dat = mpc.dat
+  pt, res = mpc.pt, mpc.res
+  dat = mpc.dat
 
-    # Primal residual
-    # rp = b - A*x
-    res.rp .= dat.b
-    mul!(res.rp, dat.A, pt.x, -one(T), one(T))
+  # Primal residual
+  # rp = b - A*x
+  res.rp .= dat.b
+  mul!(res.rp, dat.A, pt.x, -one(T), one(T))
 
-    # Lower-bound residual
-    # rl_j = l_j - (x_j - xl_j)  if l_j ∈ R
-    #      = 0                   if l_j = -∞
-    @. res.rl = ((dat.l + pt.xl) - pt.x) * dat.lflag
+  # Lower-bound residual
+  # rl_j = l_j - (x_j - xl_j)  if l_j ∈ R
+  #      = 0                   if l_j = -∞
+  @. res.rl = ((dat.l + pt.xl) - pt.x) * dat.lflag
 
-    # Upper-bound residual
-    # ru_j = u_j - (x_j + xu_j)  if u_j ∈ R
-    #      = 0                   if u_j = +∞
-    @. res.ru = (dat.u - (pt.x + pt.xu)) * dat.uflag
+  # Upper-bound residual
+  # ru_j = u_j - (x_j + xu_j)  if u_j ∈ R
+  #      = 0                   if u_j = +∞
+  @. res.ru = (dat.u - (pt.x + pt.xu)) * dat.uflag
 
-    # Dual residual
-    # rd = c - (A'y + zl - zu)
-    res.rd .= dat.c
-    mul!(res.rd, transpose(dat.A), pt.y, -one(T), one(T))
-    @. res.rd += pt.zu .* dat.uflag - pt.zl .* dat.lflag
+  # Dual residual
+  # rd = c - (A'y + zl - zu)
+  res.rd .= dat.c
+  mul!(res.rd, transpose(dat.A), pt.y, -one(T), one(T))
+  @. res.rd += pt.zu .* dat.uflag - pt.zl .* dat.lflag
 
-    # Residuals norm
-    res.rp_nrm = norm(res.rp, Inf)
-    res.rl_nrm = norm(res.rl, Inf)
-    res.ru_nrm = norm(res.ru, Inf)
-    res.rd_nrm = norm(res.rd, Inf)
+  # Residuals norm
+  res.rp_nrm = norm(res.rp, Inf)
+  res.rl_nrm = norm(res.rl, Inf)
+  res.ru_nrm = norm(res.ru, Inf)
+  res.rd_nrm = norm(res.rd, Inf)
 
-    # Compute primal and dual bounds
-    mpc.primal_objective = dot(dat.c, pt.x) + dat.c0
-    mpc.dual_objective   = (
-                            dot(dat.b, pt.y)
-                            + dot(dat.l .* dat.lflag, pt.zl)
-                            - dot(dat.u .* dat.uflag, pt.zu)
-                           ) + dat.c0
+  # Compute primal and dual bounds
+  mpc.primal_objective = dot(dat.c, pt.x) + dat.c0
+  mpc.dual_objective   = (
+                          dot(dat.b, pt.y)
+                          + dot(dat.l .* dat.lflag, pt.zl)
+                          - dot(dat.u .* dat.uflag, pt.zu)
+                         ) + dat.c0
 
-    return nothing
+  return nothing
 end
 
 
@@ -154,137 +154,137 @@ end
 Update status and return true if solver should stop.
 """
 function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
-    mpc.solver_status = Trm_Unknown
+  mpc.solver_status = Trm_Unknown
 
-    pt, res = mpc.pt, mpc.res
-    dat = mpc.dat
+  pt, res = mpc.pt, mpc.res
+  dat = mpc.dat
 
-    ρp = max(
-             res.rp_nrm / (one(T) + norm(dat.b, Inf)),
-             res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
-             res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
-            )
-    ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
-    ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
+  ρp = max(
+           res.rp_nrm / (one(T) + norm(dat.b, Inf)),
+           res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
+           res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
+          )
+  ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
+  ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
-    println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
-    println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
-    println("μ = $(mpc.pt.μ)")
-    
-    # Check for feasibility
-    if ρp <= ϵp
-        mpc.primal_status = Sln_FeasiblePoint
-    else
-        mpc.primal_status = Sln_Unknown
-    end
+  println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
+  println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
+  println("μ = $(mpc.pt.μ)")
 
-    if ρd <= ϵd
-        mpc.dual_status = Sln_FeasiblePoint
-    else
-        mpc.dual_status = Sln_Unknown
-    end
+  # Check for feasibility
+  if ρp <= ϵp
+    mpc.primal_status = Sln_FeasiblePoint
+  else
+    mpc.primal_status = Sln_Unknown
+  end
 
-    # Check for optimal solution
-    if ρp <= ϵp && ρd <= ϵd && ρg <= ϵg
-        mpc.primal_status = Sln_Optimal
-        mpc.dual_status   = Sln_Optimal
-        mpc.solver_status = Trm_Optimal
-        return nothing
-    end
+  if ρd <= ϵd
+    mpc.dual_status = Sln_FeasiblePoint
+  else
+    mpc.dual_status = Sln_Unknown
+  end
 
-    # TODO: Primal/Dual infeasibility detection
-    # Check for infeasibility certificates
-    if max(
-           norm(dat.A * pt.x, Inf),
-           norm((pt.x .- pt.xl) .* dat.lflag, Inf),
-           norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
-          ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
-        # Dual infeasible, i.e., primal unbounded
-        mpc.primal_status = Sln_InfeasibilityCertificate
-        mpc.solver_status = Trm_DualInfeasible
-        return nothing
-    end
-
-    δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
-    if norm(δ, Inf) * max(
-                          norm(dat.l .* dat.lflag, Inf),
-                          norm(dat.u .* dat.uflag, Inf),
-                          norm(dat.b, Inf)
-                         ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
-        # Primal infeasible
-        mpc.dual_status = Sln_InfeasibilityCertificate
-        mpc.solver_status = Trm_PrimalInfeasible
-        return nothing
-    end
-
+  # Check for optimal solution
+  if ρp <= ϵp && ρd <= ϵd && ρg <= ϵg
+    mpc.primal_status = Sln_Optimal
+    mpc.dual_status   = Sln_Optimal
+    mpc.solver_status = Trm_Optimal
     return nothing
+  end
+
+  # TODO: Primal/Dual infeasibility detection
+  # Check for infeasibility certificates
+  if max(
+         norm(dat.A * pt.x, Inf),
+         norm((pt.x .- pt.xl) .* dat.lflag, Inf),
+         norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
+        ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
+    # Dual infeasible, i.e., primal unbounded
+    mpc.primal_status = Sln_InfeasibilityCertificate
+    mpc.solver_status = Trm_DualInfeasible
+    return nothing
+  end
+
+  δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
+  if norm(δ, Inf) * max(
+                        norm(dat.l .* dat.lflag, Inf),
+                        norm(dat.u .* dat.uflag, Inf),
+                        norm(dat.b, Inf)
+                       ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
+    # Primal infeasible
+    mpc.dual_status = Sln_InfeasibilityCertificate
+    mpc.solver_status = Trm_PrimalInfeasible
+    return nothing
+  end
+
+  return nothing
 end
 
 function update_solver_status2!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
-    mpc.solver_status = Trm_Unknown
+  mpc.solver_status = Trm_Unknown
 
-    pt, res = mpc.pt, mpc.res
-    dat = mpc.dat
+  pt, res = mpc.pt, mpc.res
+  dat = mpc.dat
 
-    ρp = max(
-             res.rp_nrm / (one(T) + norm(dat.b, Inf)),
-             res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
-             res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
-            )
-    ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
-    ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
+  ρp = max(
+           res.rp_nrm / (one(T) + norm(dat.b, Inf)),
+           res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
+           res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
+          )
+  ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
+  ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
-    # Check for feasibility
-    if ρp <= ϵp
-        mpc.primal_status = Sln_FeasiblePoint
-    else
-        mpc.primal_status = Sln_Unknown
-    end
+  # Check for feasibility
+  if ρp <= ϵp
+    mpc.primal_status = Sln_FeasiblePoint
+  else
+    mpc.primal_status = Sln_Unknown
+  end
 
-    if ρd <= ϵd
-        mpc.dual_status = Sln_FeasiblePoint
-    else
-        mpc.dual_status = Sln_Unknown
-    end
+  if ρd <= ϵd
+    mpc.dual_status = Sln_FeasiblePoint
+  else
+    mpc.dual_status = Sln_Unknown
+  end
 
-    # Check for optimal solution
+  # Check for optimal solution
 
-    z = pt.z#mpc.dat.c - mpc.dat.A'*pt.y
-    #println("mu = ", abs(dot(pt.x, z))/length(z))
-    menor_entrada = minimum([minimum(pt.x), minimum(z)])
-    if  abs(dot(pt.x, z)) <= 1.0e-8*length(z) && menor_entrada > -1.0e-4# parar quando mu zerar
-        mpc.primal_status = Sln_Optimal
-        mpc.dual_status   = Sln_Optimal
-        mpc.solver_status = Trm_Optimal
-        return nothing
-    end
-
-    # TODO: Primal/Dual infeasibility detection
-    # Check for infeasibility certificates
-    if max(
-           norm(dat.A * pt.x, Inf),
-           norm((pt.x .- pt.xl) .* dat.lflag, Inf),
-           norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
-          ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
-        # Dual infeasible, i.e., primal unbounded
-        mpc.primal_status = Sln_InfeasibilityCertificate
-        mpc.solver_status = Trm_DualInfeasible
-        return nothing
-    end
-
-    δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
-    if norm(δ, Inf) * max(
-                          norm(dat.l .* dat.lflag, Inf),
-                          norm(dat.u .* dat.uflag, Inf),
-                          norm(dat.b, Inf)
-                         ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
-        # Primal infeasible
-        mpc.dual_status = Sln_InfeasibilityCertificate
-        mpc.solver_status = Trm_PrimalInfeasible
-        return nothing
-    end
-
+  z = pt.z#mpc.dat.c - mpc.dat.A'*pt.y
+  #println("mu = ", abs(dot(pt.x, z))/length(z))
+  menor_entrada = minimum([minimum(pt.x), minimum(z)])
+  if  abs(dot(pt.x, z)) <= 1.0e-8*length(z) && menor_entrada > -1.0e-4# parar quando mu zerar
+    mpc.primal_status = Sln_Optimal
+    mpc.dual_status   = Sln_Optimal
+    mpc.solver_status = Trm_Optimal
     return nothing
+  end
+
+  # TODO: Primal/Dual infeasibility detection
+  # Check for infeasibility certificates
+  if max(
+         norm(dat.A * pt.x, Inf),
+         norm((pt.x .- pt.xl) .* dat.lflag, Inf),
+         norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
+        ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
+    # Dual infeasible, i.e., primal unbounded
+    mpc.primal_status = Sln_InfeasibilityCertificate
+    mpc.solver_status = Trm_DualInfeasible
+    return nothing
+  end
+
+  δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
+  if norm(δ, Inf) * max(
+                        norm(dat.l .* dat.lflag, Inf),
+                        norm(dat.u .* dat.uflag, Inf),
+                        norm(dat.b, Inf)
+                       ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
+    # Primal infeasible
+    mpc.dual_status = Sln_InfeasibilityCertificate
+    mpc.solver_status = Trm_PrimalInfeasible
+    return nothing
+  end
+
+  return nothing
 end
 
 
@@ -293,297 +293,297 @@ end
 
 """
 function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
-    # TODO: pre-check whether model needs to be re-optimized.
-    # This should happen outside of this function
-    dat = mpc.dat
+  # TODO: pre-check whether model needs to be re-optimized.
+  # This should happen outside of this function
+  dat = mpc.dat
 
-    # Initialization
-    TimerOutputs.reset_timer!(mpc.timer)
-    tstart = time()
-    mpc.niter = 0
-    mpc.nitb = 0
-    mpc.n_corr_alt = 0
-    mpc.n_corr_jac = 0
-    mpc.n_tent_broyden = 0
+  # Initialization
+  TimerOutputs.reset_timer!(mpc.timer)
+  tstart = time()
+  mpc.niter = 0
+  mpc.nitb = 0
+  mpc.n_corr_alt = 0
+  mpc.n_corr_jac = 0
+  mpc.n_tent_broyden = 0
 
-    # Print information about the problem
+  # Print information about the problem
+  if params.OutputLevel > 0
+    @printf "\nOptimizer info (MPC)\n"
+    @printf "Constraints  : %d\n" dat.nrow
+    @printf "Variables    : %d\n" dat.ncol
+    bmin, bmax = extrema(dat.b)
+    @printf "RHS          : [%+.2e, %+.2e]\n" bmin bmax
+    lmin, lmax = extrema(dat.l .* dat.lflag)
+    @printf "Lower bounds : [%+.2e, %+.2e]\n" lmin lmax
+    lmin, lmax = extrema(dat.u .* dat.uflag)
+    @printf "Upper bounds : [%+.2e, %+.2e]\n" lmin lmax
+
+
+    @printf "\nLinear solver options\n"
+    @printf "  %-12s : %s\n" "Arithmetic" KKT.arithmetic(mpc.kkt)
+    @printf "  %-12s : %s\n" "Backend" KKT.backend(mpc.kkt)
+    @printf "  %-12s : %s\n" "System" KKT.linear_system(mpc.kkt)
+  end
+
+  # IPM LOG
+  if params.OutputLevel > 0
+    @printf "\n%4s  %14s  %14s  %8s %8s %8s  %7s  %4s\n" "Itn" "PObj" "DObj" "PFeas" "DFeas" "GFeas" "Mu" "Time"
+  end
+
+  # Set starting point
+  @timeit mpc.timer "Initial point" compute_starting_point(mpc)
+
+  # Main loop
+  # Iteration 0 corresponds to the starting point.
+  # Therefore, there is no numerical factorization before the first log is printed.
+  # If the maximum number of iterations is set to 0, the only computation that occurs
+  # is computing the residuals at the initial point.
+  @timeit mpc.timer "Main loop" while(true)
+
+    # I.A - Compute residuals at current iterate
+    @timeit mpc.timer "Residuals" compute_residuals!(mpc)
+
+    update_mu!(mpc.pt)
+
+    # I.B - Log
+    # TODO: Put this in a logging function
+    ttot = time() - tstart
     if params.OutputLevel > 0
-        @printf "\nOptimizer info (MPC)\n"
-        @printf "Constraints  : %d\n" dat.nrow
-        @printf "Variables    : %d\n" dat.ncol
-        bmin, bmax = extrema(dat.b)
-        @printf "RHS          : [%+.2e, %+.2e]\n" bmin bmax
-        lmin, lmax = extrema(dat.l .* dat.lflag)
-        @printf "Lower bounds : [%+.2e, %+.2e]\n" lmin lmax
-        lmin, lmax = extrema(dat.u .* dat.uflag)
-        @printf "Upper bounds : [%+.2e, %+.2e]\n" lmin lmax
+      # Display log
+      @printf "%4d" mpc.niter
 
+      # Objectives
+      ϵ = dat.objsense ? one(T) : -one(T)
+      @printf "  %+14.7e" ϵ * mpc.primal_objective
+      @printf "  %+14.7e" ϵ * mpc.dual_objective
 
-        @printf "\nLinear solver options\n"
-        @printf "  %-12s : %s\n" "Arithmetic" KKT.arithmetic(mpc.kkt)
-        @printf "  %-12s : %s\n" "Backend" KKT.backend(mpc.kkt)
-        @printf "  %-12s : %s\n" "System" KKT.linear_system(mpc.kkt)
+      # Residuals
+      @printf "  %8.2e" max(mpc.res.rp_nrm, mpc.res.rl_nrm, mpc.res.ru_nrm)
+      @printf " %8.2e" mpc.res.rd_nrm
+      @printf " %8s" "--"
+
+      # Mu
+      @printf "  %7.1e" mpc.pt.μ
+
+      # Time
+      @printf "  %.2f" ttot
+
+      print("\n")
     end
 
-    # IPM LOG
-    if params.OutputLevel > 0
-        @printf "\n%4s  %14s  %14s  %8s %8s %8s  %7s  %4s\n" "Itn" "PObj" "DObj" "PFeas" "DFeas" "GFeas" "Mu" "Time"
+    # TODO: check convergence status
+    # TODO: first call an `compute_convergence status`,
+    #   followed by a check on the solver status to determine whether to stop
+    # In particular, user limits should be checked last (if an optimal solution is found,
+    # we want to report optimal, not user limits)
+
+    @timeit mpc.timer "update status" update_solver_status!(mpc,
+                                                            params.TolerancePFeas,
+                                                            params.ToleranceDFeas,
+                                                            params.ToleranceRGap,
+                                                            params.ToleranceIFeas
+                                                           )
+
+    if (
+        mpc.solver_status == Trm_Optimal
+        || mpc.solver_status == Trm_PrimalInfeasible
+        || mpc.solver_status == Trm_DualInfeasible
+       )
+      break
+    elseif mpc.niter >= params.IterationsLimit
+      mpc.solver_status = Trm_IterationLimit
+      break
+    elseif ttot >= params.TimeLimit
+      mpc.solver_status = Trm_TimeLimit
+      break
     end
 
-    # Set starting point
-    @timeit mpc.timer "Initial point" compute_starting_point(mpc)
+    println("")
+    println("⚠️ Iteração (algoritmo principal): ", mpc.niter + 1)
 
-    # Main loop
-    # Iteration 0 corresponds to the starting point.
-    # Therefore, there is no numerical factorization before the first log is printed.
-    # If the maximum number of iterations is set to 0, the only computation that occurs
-    # is computing the residuals at the initial point.
-    @timeit mpc.timer "Main loop" while(true)
+    # TODO: step
+    # For now, include the factorization in the step function
+    # Q: should we use more arguments here?
+    try
+      @timeit mpc.timer "Step" compute_step!(mpc, params)
+      println("x=")
+      display(mpc.pt.x)
+      println("lambda=")
+      display(mpc.pt.y)
+      println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
+      println("Nº total de iterações de Broyden: ",   mpc.nitb)
+      println("Nº total de correções alternativas: ", mpc.n_corr_alt)
+      println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
+    catch err
 
-        # I.A - Compute residuals at current iterate
-        @timeit mpc.timer "Residuals" compute_residuals!(mpc)
+      if isa(err, PosDefException) || isa(err, SingularException)
+        # Numerical trouble while computing the factorization
+        mpc.solver_status = Trm_NumericalProblem
 
-        update_mu!(mpc.pt)
+      elseif isa(err, OutOfMemoryError)
+        # Out of memory
+        mpc.solver_status = Trm_MemoryLimit
 
-        # I.B - Log
-        # TODO: Put this in a logging function
-        ttot = time() - tstart
-        if params.OutputLevel > 0
-            # Display log
-            @printf "%4d" mpc.niter
+      elseif isa(err, InterruptException)
+        mpc.solver_status = Trm_Unknown
+      else
+        # Unknown error: rethrow
+        rethrow(err)
+      end
 
-            # Objectives
-            ϵ = dat.objsense ? one(T) : -one(T)
-            @printf "  %+14.7e" ϵ * mpc.primal_objective
-            @printf "  %+14.7e" ϵ * mpc.dual_objective
-
-            # Residuals
-            @printf "  %8.2e" max(mpc.res.rp_nrm, mpc.res.rl_nrm, mpc.res.ru_nrm)
-            @printf " %8.2e" mpc.res.rd_nrm
-            @printf " %8s" "--"
-
-            # Mu
-            @printf "  %7.1e" mpc.pt.μ
-
-            # Time
-            @printf "  %.2f" ttot
-
-            print("\n")
-        end
-
-        # TODO: check convergence status
-        # TODO: first call an `compute_convergence status`,
-        #   followed by a check on the solver status to determine whether to stop
-        # In particular, user limits should be checked last (if an optimal solution is found,
-        # we want to report optimal, not user limits)
-
-        @timeit mpc.timer "update status" update_solver_status!(mpc,
-                                                                 params.TolerancePFeas,
-                                                                 params.ToleranceDFeas,
-                                                                 params.ToleranceRGap,
-                                                                 params.ToleranceIFeas
-                                                                )
-
-        if (
-            mpc.solver_status == Trm_Optimal
-            || mpc.solver_status == Trm_PrimalInfeasible
-            || mpc.solver_status == Trm_DualInfeasible
-           )
-            break
-        elseif mpc.niter >= params.IterationsLimit
-            mpc.solver_status = Trm_IterationLimit
-            break
-        elseif ttot >= params.TimeLimit
-            mpc.solver_status = Trm_TimeLimit
-            break
-        end
-
-        println("")
-        println("⚠️ Iteração (algoritmo principal): ", mpc.niter + 1)
-
-        # TODO: step
-        # For now, include the factorization in the step function
-        # Q: should we use more arguments here?
-        try
-            @timeit mpc.timer "Step" compute_step!(mpc, params)
-            println("x=")
-            display(mpc.pt.x)
-            println("lambda=")
-            display(mpc.pt.y)
-            println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
-            println("Nº total de iterações de Broyden: ",   mpc.nitb)
-            println("Nº total de correções alternativas: ", mpc.n_corr_alt)
-            println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
-        catch err
-
-            if isa(err, PosDefException) || isa(err, SingularException)
-                # Numerical trouble while computing the factorization
-                mpc.solver_status = Trm_NumericalProblem
-
-            elseif isa(err, OutOfMemoryError)
-                # Out of memory
-                mpc.solver_status = Trm_MemoryLimit
-
-            elseif isa(err, InterruptException)
-                mpc.solver_status = Trm_Unknown
-            else
-                # Unknown error: rethrow
-                rethrow(err)
-            end
-
-            rethrow(err)
-            break
-        end
-        mpc.niter += 1
+      rethrow(err)
+      break
     end
+    mpc.niter += 1
+  end
 
-    # TODO: trocar as saidas para coisas desse tipo
-    # params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
-    println("Nº de iterações (algoritmo principal): ", mpc.niter)
+  # TODO: trocar as saidas para coisas desse tipo
+  # params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
+  println("Nº de iterações (algoritmo principal): ", mpc.niter)
 
-    # TODO: print message based on termination status
-    params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
+  # TODO: print message based on termination status
+  params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
 
-    return nothing
+  return nothing
 end
 
 function compute_starting_point2(mpc::QNC{T}, μ = 10.0) where{T} # encontra um ponto inicial proximo do caminho central
 
-    # Names
-    dat = mpc.dat
-    pt = mpc.pt
-    m, n, p = pt.m, pt.n, pt.p
+  # Names
+  dat = mpc.dat
+  pt = mpc.pt
+  m, n, p = pt.m, pt.n, pt.p
 
-    A = dat.A
-    b = dat.b
-    c = dat.c
+  A = dat.A
+  b = dat.b
+  c = dat.c
 
-    KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
+  KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
 
-    # Get initial iterate
-    KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
-    KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
+  # Get initial iterate
+  KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
+  KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
 
-    pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
-    z = pt.z
-    println("<< PONTO INICIAL >>")
-    println("x=")
-    display(pt.x)
-    println("lambda=")
-    display(pt.y)
-    println("s=")
-    display(pt.z)
-    
-    println("")
-    println("mu_0 = ", dot(pt.x, z)/n)
+  pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
+  z = pt.z
+  println("<< PONTO INICIAL >>")
+  println("x=")
+  display(pt.x)
+  println("lambda=")
+  display(pt.y)
+  println("s=")
+  display(pt.z)
 
-    if min(minimum(pt.x), minimum(pt.z)) <= 0
-      error("O Ponto inicial não está em F_0!")
-    end
+  println("")
+  println("mu_0 = ", dot(pt.x, z)/n)
+
+  if min(minimum(pt.x), minimum(pt.z)) <= 0
+    error("O Ponto inicial não está em F_0!")
+  end
 
 
 
-    #    println("Ponto inicial: ", (pt.x, pt.y, z))
+  #    println("Ponto inicial: ", (pt.x, pt.y, z))
 
-    δx = zeros(T)
-    @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
-    @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
+  δx = zeros(T)
+  @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
+  @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
 
-    #z = dat.c - dat.A' * pt.y
-    #=
-    We set zl, zu such that `z = zl - zu`
+  #z = dat.c - dat.A' * pt.y
+  #=
+  We set zl, zu such that `z = zl - zu`
 
-    lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
-    ----+-----+--------+---------+
-    yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
-    yes |  no |     zⱼ |      0  |
-    no | yes |     0  |     -zⱼ |
-    no |  no |     0  |      0  |
-    ----+-----+--------+---------+
-    =#
-    @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
-    @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
+  lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
+  ----+-----+--------+---------+
+  yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
+  yes |  no |     zⱼ |      0  |
+  no | yes |     0  |     -zⱼ |
+  no |  no |     0  |      0  |
+  ----+-----+--------+---------+
+  =#
+  @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
+  @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
 
-    δz = zeros(T)
+  δz = zeros(T)
 
-    pt.zl[dat.lflag] .+= δz
-    pt.zu[dat.uflag] .+= δz
+  pt.zl[dat.lflag] .+= δz
+  pt.zu[dat.uflag] .+= δz
 
-    mpc.pt.τ   = one(T)
-    mpc.pt.κ   = zero(T)
+  mpc.pt.τ   = one(T)
+  mpc.pt.κ   = zero(T)
 
-    # II. Balance complementarity products
-    μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
-    dx = 0*μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
-    dz = 0*μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
+  # II. Balance complementarity products
+  μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
+  dx = 0*μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
+  dz = 0*μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
 
-    pt.xl[dat.lflag] .+= dx
-    pt.xu[dat.uflag] .+= dx
-    pt.zl[dat.lflag] .+= dz
-    pt.zu[dat.uflag] .+= dz
+  pt.xl[dat.lflag] .+= dx
+  pt.xu[dat.uflag] .+= dx
+  pt.zl[dat.lflag] .+= dz
+  pt.zu[dat.uflag] .+= dz
 
-    # Update centrality parameter
-    update_mu!(mpc.pt)
+  # Update centrality parameter
+  update_mu!(mpc.pt)
 
 
 end
 
 function compute_starting_point(mpc::QNC{T}) where{T}
 
-    pt = mpc.pt
-    dat = mpc.dat
-    m, n, p = pt.m, pt.n, pt.p
+  pt = mpc.pt
+  dat = mpc.dat
+  m, n, p = pt.m, pt.n, pt.p
 
-    KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
+  KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
 
-    # Get initial iterate
-    KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
-    KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
+  # Get initial iterate
+  KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
+  KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
 
-    # I. Recover positive primal-dual coordinates
-    δx = one(T) + max(
-        zero(T),
-        (-3 // 2) * minimum((pt.x .- dat.l) .* dat.lflag),
-        (-3 // 2) * minimum((dat.u .- pt.x) .* dat.uflag)
-    )
-    @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
-    @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
+  # I. Recover positive primal-dual coordinates
+  δx = one(T) + max(
+                    zero(T),
+                    (-3 // 2) * minimum((pt.x .- dat.l) .* dat.lflag),
+                    (-3 // 2) * minimum((dat.u .- pt.x) .* dat.uflag)
+                   )
+  @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
+  @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
 
-    z = dat.c - dat.A' * pt.y
-    #=
-        We set zl, zu such that `z = zl - zu`
+  z = dat.c - dat.A' * pt.y
+  #=
+  We set zl, zu such that `z = zl - zu`
 
-         lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
-        ----+-----+--------+---------+
-        yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
-        yes |  no |     zⱼ |      0  |
-         no | yes |     0  |     -zⱼ |
-         no |  no |     0  |      0  |
-        ----+-----+--------+---------+
-    =#
-    @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
-    @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
+  lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
+  ----+-----+--------+---------+
+  yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
+  yes |  no |     zⱼ |      0  |
+  no | yes |     0  |     -zⱼ |
+  no |  no |     0  |      0  |
+  ----+-----+--------+---------+
+  =#
+  @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
+  @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
 
-    δz = one(T) + max(zero(T), (-3 // 2) * minimum(pt.zl), (-3 // 2) * minimum(pt.zu))
-    pt.zl[dat.lflag] .+= δz
-    pt.zu[dat.uflag] .+= δz
+  δz = one(T) + max(zero(T), (-3 // 2) * minimum(pt.zl), (-3 // 2) * minimum(pt.zu))
+  pt.zl[dat.lflag] .+= δz
+  pt.zu[dat.uflag] .+= δz
 
-    mpc.pt.τ   = one(T)
-    mpc.pt.κ   = zero(T)
+  mpc.pt.τ   = one(T)
+  mpc.pt.κ   = zero(T)
 
-    # II. Balance complementarity products
-    μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
-    dx = μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
-    dz = μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
+  # II. Balance complementarity products
+  μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
+  dx = μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
+  dz = μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
 
-    pt.xl[dat.lflag] .+= dx
-    pt.xu[dat.uflag] .+= dx
-    pt.zl[dat.lflag] .+= dz
-    pt.zu[dat.uflag] .+= dz
+  pt.xl[dat.lflag] .+= dx
+  pt.xu[dat.uflag] .+= dx
+  pt.zl[dat.lflag] .+= dz
+  pt.zu[dat.uflag] .+= dz
 
-    # Update centrality parameter
-    update_mu!(mpc.pt)
+  # Update centrality parameter
+  update_mu!(mpc.pt)
 
-    return nothing
+  return nothing
 end
 
