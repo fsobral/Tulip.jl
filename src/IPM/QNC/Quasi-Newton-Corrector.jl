@@ -378,19 +378,14 @@ function Broyden2!(GB_struct, alpha, sig, cp_mu, it_max, eps, cp_x, cp_xl, cp_xu
     sb = (dot(GB_struct.sb[it-1], GB_struct.u[it-1]) / GB_struct.rho[it-1]) * GB_struct.u[it-1]
     sb .= sb .+ GB_struct.u[it-1]
 
+    if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
+      alpha_b = max_step_length_pd(mpc.pt, mpc.Δc)[1] * params.StepDampFactor 
+      sb .*= alpha_b
+    end
+
     # Atualizar o ponto
 
     Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(GB_struct.qnc, sb)
-
-    if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
-      alpha_b = max_step_length_pd(mpc.pt, mpc.Δc)[1] * params.StepDampFactor 
-      Δc.x  .= alpha_b .* Δc.x 
-      Δc.xl .= alpha_b .* Δc.xl
-      Δc.xu .= alpha_b .* Δc.xu
-      Δc.y  .= alpha_b .* Δc.y 
-      Δc.zl .= alpha_b .* Δc.zl
-      Δc.zu .= alpha_b .* Δc.zu
-    end
 
     pt.x  .+=  Δc.x
     pt.xl .+=  Δc.xl
