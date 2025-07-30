@@ -268,43 +268,12 @@ function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:Abs
   azu = max_step_length(pt.zu, δ.zu)
 
   αp = min(one(T), axl, axu)
-  αd = min(one(T), azl, azu, αp) # Modificado para usar o mesmo alpha para ambos x e y.
-  αp = αd                        #
-  # O código original do Tulip não testa se é maior que zero. Talvez tenha que acrescentar isso aqui.
+  αd = min(one(T), azl, azu)
+  alpha = min(αp, αd) 
+  αp = αd = alpha # Comentar para usar alphas diferentes                       #
 
   return αp, αd
 end
-
-function max_step_length_pd2(pt, delta, p_z, d_z)
-  #    axl = max_step_length(pt.xl, δ.xl)
-  #    axu = max_step_length(pt.xu, δ.xu)
-  #    azl = max_step_length(pt.zl, δ.zl)
-  #    azu = max_step_length(pt.zu, δ.zu)
-
-  alpha0 = 1.0
-  for i=1:length(pt.x)
-    if delta.x[i] < 0
-      temp = - pt.x[i]/delta.x[i]
-      if temp < alpha0
-        alpha0 = temp
-      end
-    end
-    if d_z[i] < 0
-      temp = - p_z[i]/d_z[i]
-      if temp < alpha0
-        alpha0 = temp
-      end
-    end
-    if alpha0 < 0
-      alpha0 = 0
-      break
-    end
-
-  end
-
-  return alpha0, alpha0
-end
-
 
 """
     compute_predictor!(mpc::MPC) -> Nothing
@@ -328,117 +297,119 @@ function compute_predictor!(mpc::QNC)
   return nothing
 end
 
-"""
-    compute_corrector!(mpc::MPC) -> Nothing
-"""
-function compute_corrector!(mpc::QNC{T, Tv}, σ, alpha, xlb, xub, zlb, zub) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
+# ATENÇÃO: a função abaixo não é a original do Tulip. Para ver a original, veja o step.jl do MPC.
 
-  # WARNING: Eu acho que o deslocamento que estou fazendo no ponto pode estar alterando a matriz jacobiana, então apenas recalcular os resíduos não vai ser suficiente. 
+#"""
+#    compute_corrector!(mpc::MPC) -> Nothing
+#"""
+#function compute_corrector!(mpc::QNC{T, Tv}, σ, alpha, xlb, xub, zlb, zub) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
+#
+#  # WARNING: Eu acho que o deslocamento que estou fazendo no ponto pode estar alterando a matriz jacobiana, então apenas recalcular os resíduos não vai ser suficiente. 
+#
+#
+#  dat = mpc.dat
+#  pt = mpc.pt
+#  Δ = mpc.Δ
+#  Δc = mpc.Δc
+#
+#
+#  # Step length for affine-scaling direction
+#  #  αp_aff, αd_aff = mpc.αp, mpc.αd
+#  #  μₐ = (
+#  #        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
+#  #        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
+#  #       ) / pt.p
+#  #  σ = clamp((μₐ / pt.μ)^3, sqrt(eps(T)), one(T) - sqrt(eps(T)))
+#
+#  # Newton RHS
+#  # compute_predictor! was called ⟹ ξp, ξl, ξu, ξd are already set
+#  @. mpc.ξxzl = (σ * pt.μ .- xlb .* zlb) .* dat.lflag
+#  @. mpc.ξxzu = (σ * pt.μ .- xub .* zub) .* dat.uflag
+#
+#  # Compute corrector
+#  @timeit mpc.timer "Newton" solve_newton_system!(mpc.Δc, mpc, mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
+#
+#  # TODO: check Newton system residuals, perform iterative refinement if needed
+#  return nothing
+#end
 
-
-  dat = mpc.dat
-  pt = mpc.pt
-  Δ = mpc.Δ
-  Δc = mpc.Δc
-
-
-  # Step length for affine-scaling direction
-  #  αp_aff, αd_aff = mpc.αp, mpc.αd
-  #  μₐ = (
-  #        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
-  #        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
-  #       ) / pt.p
-  #  σ = clamp((μₐ / pt.μ)^3, sqrt(eps(T)), one(T) - sqrt(eps(T)))
-
-  # Newton RHS
-  # compute_predictor! was called ⟹ ξp, ξl, ξu, ξd are already set
-  @. mpc.ξxzl = (σ * pt.μ .- xlb .* zlb) .* dat.lflag
-  @. mpc.ξxzu = (σ * pt.μ .- xub .* zub) .* dat.uflag
-
-  # Compute corrector
-  @timeit mpc.timer "Newton" solve_newton_system!(mpc.Δc, mpc, mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
-
-  # TODO: check Newton system residuals, perform iterative refinement if needed
-  return nothing
-end
-
-"""
-    compute_extra_correction!(mpc) -> Nothing
-"""
-function compute_extra_correction!(mpc::MPC{T, Tv};
-    δ::T = T(3 // 10),
-    γ::T = T(1 // 10),
-  ) where{T, Tv<:AbstractVector{T}}
-  pt = mpc.pt
-  Δ  = mpc.Δ
-  Δc = mpc.Δc
-  dat = mpc.dat
-
-  # Tentative step sizes and centrality parameter
-  αp, αd = mpc.αp, mpc.αd
-  αp_ = min(αp + δ, one(T))
-  αd_ = min(αd + δ, one(T))
-
-  g  = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
-  gₐ = dot((@. ((pt.xl + mpc.αp * Δ.xl) * dat.lflag)), pt.zl .+ mpc.αd .* Δ.zl) +
-  dot((@. ((pt.xu + mpc.αp * Δ.xu) * dat.uflag)), pt.zu .+ mpc.αd .* Δ.zu)
-  μ = (gₐ / g) * (gₐ / g) * (gₐ / pt.p)
-
-  # Newton RHS
-  # ξp, ξl, ξu, ξd are already at zero
-  @timeit mpc.timer "target" begin
-    compute_target!(mpc.ξxzl, pt.xl, Δ.xl, pt.zl, Δ.zl, αp_, αd_, γ, μ)
-    compute_target!(mpc.ξxzu, pt.xu, Δ.xu, pt.zu, Δ.zu, αp_, αd_, γ, μ)
-  end
-
-  @timeit mpc.timer "Newton" solve_newton_system!(Δc, mpc,
-                                                  mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu
-                                                 )
-
-  # Δc ⟵ Δp + Δc
-  axpy!(one(T), Δ.x, Δc.x)
-  axpy!(one(T), Δ.xl, Δc.xl)
-  axpy!(one(T), Δ.xu, Δc.xu)
-  axpy!(one(T), Δ.y, Δc.y)
-  axpy!(one(T), Δ.zl, Δc.zl)
-  axpy!(one(T), Δ.zu, Δc.zu)
-
-  # TODO: check Newton residuals
-  return nothing
-end
-
-"""
-    compute_target!(t, x, z, γ, μ)
-
-Compute centrality target.
-"""
-function compute_target!(
-    t::Vector{T},
-    x::Vector{T},
-    δx::Vector{T},
-    z::Vector{T},
-    δz::Vector{T},
-    αp::T,
-    αd::T,
-    γ::T,
-    μ::T
-  ) where{T}
-
-  n = length(t)
-
-  tmin = μ * γ
-  tmax = μ / γ
-
-  @inbounds for j in 1:n
-    v = (x[j] + αp * δx[j]) * (z[j] + αd * δz[j])
-    if v < tmin
-      t[j] = tmin - v
-    elseif v > tmax
-      t[j] = tmax - v
-    else
-      t[j] = zero(T)
-    end
-  end
-
-  return nothing
-end
+#"""
+#    compute_extra_correction!(mpc) -> Nothing
+#"""
+#function compute_extra_correction!(mpc::MPC{T, Tv};
+#    δ::T = T(3 // 10),
+#    γ::T = T(1 // 10),
+#  ) where{T, Tv<:AbstractVector{T}}
+#  pt = mpc.pt
+#  Δ  = mpc.Δ
+#  Δc = mpc.Δc
+#  dat = mpc.dat
+#
+#  # Tentative step sizes and centrality parameter
+#  αp, αd = mpc.αp, mpc.αd
+#  αp_ = min(αp + δ, one(T))
+#  αd_ = min(αd + δ, one(T))
+#
+#  g  = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
+#  gₐ = dot((@. ((pt.xl + mpc.αp * Δ.xl) * dat.lflag)), pt.zl .+ mpc.αd .* Δ.zl) +
+#  dot((@. ((pt.xu + mpc.αp * Δ.xu) * dat.uflag)), pt.zu .+ mpc.αd .* Δ.zu)
+#  μ = (gₐ / g) * (gₐ / g) * (gₐ / pt.p)
+#
+#  # Newton RHS
+#  # ξp, ξl, ξu, ξd are already at zero
+#  @timeit mpc.timer "target" begin
+#    compute_target!(mpc.ξxzl, pt.xl, Δ.xl, pt.zl, Δ.zl, αp_, αd_, γ, μ)
+#    compute_target!(mpc.ξxzu, pt.xu, Δ.xu, pt.zu, Δ.zu, αp_, αd_, γ, μ)
+#  end
+#
+#  @timeit mpc.timer "Newton" solve_newton_system!(Δc, mpc,
+#                                                  mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu
+#                                                 )
+#
+#  # Δc ⟵ Δp + Δc
+#  axpy!(one(T), Δ.x, Δc.x)
+#  axpy!(one(T), Δ.xl, Δc.xl)
+#  axpy!(one(T), Δ.xu, Δc.xu)
+#  axpy!(one(T), Δ.y, Δc.y)
+#  axpy!(one(T), Δ.zl, Δc.zl)
+#  axpy!(one(T), Δ.zu, Δc.zu)
+#
+#  # TODO: check Newton residuals
+#  return nothing
+#end
+#
+#"""
+#    compute_target!(t, x, z, γ, μ)
+#
+#Compute centrality target.
+#"""
+#function compute_target!(
+#    t::Vector{T},
+#    x::Vector{T},
+#    δx::Vector{T},
+#    z::Vector{T},
+#    δz::Vector{T},
+#    αp::T,
+#    αd::T,
+#    γ::T,
+#    μ::T
+#  ) where{T}
+#
+#  n = length(t)
+#
+#  tmin = μ * γ
+#  tmax = μ / γ
+#
+#  @inbounds for j in 1:n
+#    v = (x[j] + αp * δx[j]) * (z[j] + αd * δz[j])
+#    if v < tmin
+#      t[j] = tmin - v
+#    elseif v > tmax
+#      t[j] = tmax - v
+#    else
+#      t[j] = zero(T)
+#    end
+#  end
+#
+#  return nothing
+#end

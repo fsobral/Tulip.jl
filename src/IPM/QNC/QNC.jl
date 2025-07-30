@@ -220,74 +220,6 @@ function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
   return nothing
 end
 
-function update_solver_status2!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
-  mpc.solver_status = Trm_Unknown
-
-  pt, res = mpc.pt, mpc.res
-  dat = mpc.dat
-
-  ρp = max(
-           res.rp_nrm / (one(T) + norm(dat.b, Inf)),
-           res.rl_nrm / (one(T) + norm(dat.l .* dat.lflag, Inf)),
-           res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
-          )
-  ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
-  ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
-
-  # Check for feasibility
-  if ρp <= ϵp
-    mpc.primal_status = Sln_FeasiblePoint
-  else
-    mpc.primal_status = Sln_Unknown
-  end
-
-  if ρd <= ϵd
-    mpc.dual_status = Sln_FeasiblePoint
-  else
-    mpc.dual_status = Sln_Unknown
-  end
-
-  # Check for optimal solution
-
-  z = pt.z#mpc.dat.c - mpc.dat.A'*pt.y
-  #println("mu = ", abs(dot(pt.x, z))/length(z))
-  menor_entrada = minimum([minimum(pt.x), minimum(z)])
-  if  abs(dot(pt.x, z)) <= 1.0e-8*length(z) && menor_entrada > -1.0e-4# parar quando mu zerar
-    mpc.primal_status = Sln_Optimal
-    mpc.dual_status   = Sln_Optimal
-    mpc.solver_status = Trm_Optimal
-    return nothing
-  end
-
-  # TODO: Primal/Dual infeasibility detection
-  # Check for infeasibility certificates
-  if max(
-         norm(dat.A * pt.x, Inf),
-         norm((pt.x .- pt.xl) .* dat.lflag, Inf),
-         norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
-        ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
-    # Dual infeasible, i.e., primal unbounded
-    mpc.primal_status = Sln_InfeasibilityCertificate
-    mpc.solver_status = Trm_DualInfeasible
-    return nothing
-  end
-
-  δ = dat.A' * pt.y .+ (pt.zl .* dat.lflag) .- (pt.zu .* dat.uflag)
-  if norm(δ, Inf) * max(
-                        norm(dat.l .* dat.lflag, Inf),
-                        norm(dat.u .* dat.uflag, Inf),
-                        norm(dat.b, Inf)
-                       ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
-    # Primal infeasible
-    mpc.dual_status = Sln_InfeasibilityCertificate
-    mpc.solver_status = Trm_PrimalInfeasible
-    return nothing
-  end
-
-  return nothing
-end
-
-
 """
     optimize!
 
@@ -377,6 +309,7 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     # In particular, user limits should be checked last (if an optimal solution is found,
     # we want to report optimal, not user limits)
 
+    # TODO: Parei aqui.
     @timeit mpc.timer "update status" update_solver_status!(mpc,
                                                             params.TolerancePFeas,
                                                             params.ToleranceDFeas,
@@ -398,22 +331,16 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
       break
     end
 
-    #println("")
-    #println("⚠️ Iteração (algoritmo principal): ", mpc.niter + 1)
-
     # TODO: step
     # For now, include the factorization in the step function
     # Q: should we use more arguments here?
     try
       @timeit mpc.timer "Step" compute_step!(mpc, params)
-      #println("x=")
-      #display(mpc.pt.x)
-      #println("lambda=")
-      #display(mpc.pt.y)
-      #println("Nº total de tentativas de broyden: ",  mpc.n_tent_broyden)
-      #println("Nº total de iterações de Broyden: ",   mpc.nitb)
-      #println("Nº total de correções alternativas: ", mpc.n_corr_alt)
-      #println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
+
+      println "Nº total de tentativas de broyden:  " mpc.n_tent_broyden
+      println "Nº total de iterações de Broyden:   " mpc.nitb
+      println "Nº total de correções alternativas: " mpc.n_corr_alt
+      println "Nº total de correções da jacobiana: " mpc.n_corr_jac
     catch err
 
       if isa(err, PosDefException) || isa(err, SingularException)
@@ -445,87 +372,6 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
   params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
 
   return nothing
-end
-
-function compute_starting_point2(mpc::QNC{T}, μ = 10.0) where{T} # encontra um ponto inicial proximo do caminho central
-
-  # Names
-  dat = mpc.dat
-  pt = mpc.pt
-  m, n, p = pt.m, pt.n, pt.p
-
-  A = dat.A
-  b = dat.b
-  c = dat.c
-
-  KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
-
-  # Get initial iterate
-  KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
-  KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
-
-  pt.x, pt.y, pt.z = make_feasible(A, b, c, 10.0)
-  z = pt.z
-  #println("<< PONTO INICIAL >>")
-  #println("x=")
-  #display(pt.x)
-  #println("lambda=")
-  #display(pt.y)
-  #println("s=")
-  #display(pt.z)
-
-  #println("")
-  #println("mu_0 = ", dot(pt.x, z)/n)
-
-  if min(minimum(pt.x), minimum(pt.z)) <= 0
-    error("O Ponto inicial não está em F_0!")
-  end
-
-
-
-  #    println("Ponto inicial: ", (pt.x, pt.y, z))
-
-  δx = zeros(T)
-  @. pt.xl  = ((pt.x - dat.l) + δx) * dat.lflag
-  @. pt.xu  = ((dat.u - pt.x) + δx) * dat.uflag
-
-  #z = dat.c - dat.A' * pt.y
-  #=
-  We set zl, zu such that `z = zl - zu`
-
-  lⱼ |  uⱼ |    zˡⱼ |     zᵘⱼ |
-  ----+-----+--------+---------+
-  yes | yes | ¹/₂ zⱼ | ⁻¹/₂ zⱼ |
-  yes |  no |     zⱼ |      0  |
-  no | yes |     0  |     -zⱼ |
-  no |  no |     0  |      0  |
-  ----+-----+--------+---------+
-  =#
-  @. pt.zl = ( z / (dat.lflag + dat.uflag)) * dat.lflag
-  @. pt.zu = (-z / (dat.lflag + dat.uflag)) * dat.uflag
-
-  δz = zeros(T)
-
-  pt.zl[dat.lflag] .+= δz
-  pt.zu[dat.uflag] .+= δz
-
-  mpc.pt.τ   = one(T)
-  mpc.pt.κ   = zero(T)
-
-  # II. Balance complementarity products
-  μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
-  dx = 0*μ / ( 2 * (sum(pt.zl) + sum(pt.zu)))
-  dz = 0*μ / ( 2 * (sum(pt.xl) + sum(pt.xu)))
-
-  pt.xl[dat.lflag] .+= dx
-  pt.xu[dat.uflag] .+= dx
-  pt.zl[dat.lflag] .+= dz
-  pt.zu[dat.uflag] .+= dz
-
-  # Update centrality parameter
-  update_mu!(mpc.pt)
-
-
 end
 
 function compute_starting_point(mpc::QNC{T}) where{T}
