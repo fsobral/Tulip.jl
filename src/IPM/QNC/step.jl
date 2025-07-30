@@ -55,119 +55,71 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   Δc = mpc.Δc
 
   # Affine-scaling direction and associated step size
-  # Pedro: aqui foi modificado para adotar um alpha unico para ambos os problemas primal e dual
 
   @timeit mpc.timer "Predictor" compute_predictor!(mpc::QNC)
-  mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
-
-  # Reconstruindo z e Δz
-  #  z = zeros(n)
-  #  dz = zeros(n)
-  #  for i=1:n
-  # #   z[i] = c[i] - dot(A[:, i], pt.y)
-  #    dz[i] = - dot(A[:, i], Δ.y) # calcule -A'*Δ.y coordenada a coordenada
-  #  end
-  #  z = mpc.pt.z
-
-  #  mpc.αp, mpc.αd = max_step_length_pd2(mpc.pt, Δ, z, dz) # Espaço para otimizar!
-  #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
-  #    if mpc.αp <= mpc.αd
-  #        mpc.αd = mpc.αp
-  #    else
-  #        mpc.αp = mpc.αd
-  #    end
+  mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ) 
 
   # TODO: if step size is large enough, skip corrector
 
   # Corrector
-  #  corretor_qn = true
-  #  cp_x, cp_y, cp_z = copy(pt.x), copy(pt.y), copy(pt.z) 
-  #@timeit mpc.timer "Corrector" all_tests_failed_old = Quasi_Newton_Corrector!(mpc, params)
+  
   @timeit mpc.timer "Corrector" Quasi_Newton_Corrector!(mpc, params)
-  #  if false#all_tests_failed == true
-  #    pt.x, pt.y, pt.z = cp_x, cp_y, cp_z
-  #    #mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ)
-  #    compute_corrector!(mpc::MPC)
-  #    mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δc)
-  #    corretor_qn = false
-  #  end
-
-  # TODO: the following is not needed if there are no additional corrections
-  copyto!(Δ.x, Δc.x)
+  
+  # Aqui, Δc já é a soma do passo de Newton e dos passos de Broyden multiplicada pelos seus tamanhos de passo.
+  
+  copyto!(Δ.x,  Δc.x)
   copyto!(Δ.xl, Δc.xl)
   copyto!(Δ.xu, Δc.xu)
-  copyto!(Δ.y, Δc.y)
+  copyto!(Δ.y,  Δc.y)
   copyto!(Δ.zl, Δc.zl)
   copyto!(Δ.zu, Δc.zu)
 
-  # Extra centrality corrections
-  ncor = 0
-  ncor_max = params.CorrectionLimit
-
-  # Zero out the Newton RHS. This only needs to be done once.
-  # TODO: not needed if no additional corrections
-  rmul!(mpc.ξp, zero(T))
-  rmul!(mpc.ξl, zero(T))
-  rmul!(mpc.ξu, zero(T))
-  rmul!(mpc.ξd, zero(T))
-
-  @timeit mpc.timer "Extra corr" while false#ncor < ncor_max
-    compute_extra_correction!(mpc)
-
-    # TODO: function to compute step size given Δ and Δc
-    # This would avoid copying data around
-    αp_c, αd_c = max_step_length_pd(mpc.pt, mpc.Δc)
-
-    if αp_c >= 1.01 * mpc.αp && αd_c >= 1.01 * mpc.αd
-      mpc.αp = αp_c
-      mpc.αd = αd_c
-
-      # Δ ⟵ Δc
-      copyto!(Δ.x, Δc.x)
-      copyto!(Δ.xl, Δc.xl)
-      copyto!(Δ.xu, Δc.xu)
-      copyto!(Δ.y, Δc.y)
-      copyto!(Δ.zl, Δc.zl)
-      copyto!(Δ.zu, Δc.zu)
-
-      ncor += 1
-    else
-      # Not enough improvement: abort
-      break
-    end
-  end
-
-  #    if corretor_qn == false
-  #      # Update current iterate
-  #      mpc.αp *= params.StepDampFactor
-  #      mpc.αd *= params.StepDampFactor
-  #      pt.x  .+= mpc.αp .* Δ.x
-  #      pt.xl .+= mpc.αp .* Δ.xl
-  #      pt.xu .+= mpc.αp .* Δ.xu
-  #      pt.y  .+= mpc.αd .* Δ.y
-  #      pt.zl .+= mpc.αd .* Δ.zl
-  #      pt.zu .+= mpc.αd .* Δ.zu
-  #      update_mu!(pt)
-  #    else
-  #      #nothing
-  #  #    pt.x  .+= Δ.x
-  #  #    pt.xl .+= Δ.xl
-  #  #    pt.xu .+= Δ.xu
-  #  #    pt.y  .+= Δ.y
-  #  #    pt.zl .+= Δ.zl
-  #  #    pt.zu .+= Δ.zu
-  #  #    update_mu!(pt)
-  #  end
+#  # Extra centrality corrections
+#  ncor = 0
+#  ncor_max = params.CorrectionLimit
+#
+#  # Zero out the Newton RHS. This only needs to be done once.
+#  # TODO: not needed if no additional corrections
+#  rmul!(mpc.ξp, zero(T))
+#  rmul!(mpc.ξl, zero(T))
+#  rmul!(mpc.ξu, zero(T))
+#  rmul!(mpc.ξd, zero(T))
+#
+#  @timeit mpc.timer "Extra corr" while false#ncor < ncor_max
+#    compute_extra_correction!(mpc)
+#
+#    # TODO: function to compute step size given Δ and Δc
+#    # This would avoid copying data around
+#    αp_c, αd_c = max_step_length_pd(mpc.pt, mpc.Δc)
+#
+#    if αp_c >= 1.01 * mpc.αp && αd_c >= 1.01 * mpc.αd
+#      mpc.αp = αp_c
+#      mpc.αd = αd_c
+#
+#      # Δ ⟵ Δc
+#      copyto!(Δ.x, Δc.x)
+#      copyto!(Δ.xl, Δc.xl)
+#      copyto!(Δ.xu, Δc.xu)
+#      copyto!(Δ.y, Δc.y)
+#      copyto!(Δ.zl, Δc.zl)
+#      copyto!(Δ.zu, Δc.zu)
+#
+#      ncor += 1
+#    else
+#      # Not enough improvement: abort
+#      break
+#    end
+#  end
 
   # Update current iterate
   #    mpc.αp *= params.StepDampFactor
   #    mpc.αd *= params.StepDampFactor
-  pt.x  .+=  Δ.x   # Modificado, pois esta já é a direção resultante ( alpha * direcao de Newton + correcão de Broyden) 
-  pt.xl .+=  Δ.xl  #
-  pt.xu .+=  Δ.xu  #
-  pt.y  .+=  Δ.y   #
-  pt.zl .+=  Δ.zl  #
-  pt.zu .+=  Δ.zu  #
+  pt.x  .+=  Δ.x   
+  pt.xl .+=  Δ.xl  
+  pt.xu .+=  Δ.xu  
+  pt.y  .+=  Δ.y   
+  pt.zl .+=  Δ.zl  
+  pt.zu .+=  Δ.zu  
   update_mu!(pt)
 
   return nothing
@@ -270,7 +222,7 @@ function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:Abs
   αp = min(one(T), axl, axu)
   αd = min(one(T), azl, azu)
   alpha = min(αp, αd) 
-  αp = αd = alpha # Comentar para usar alphas diferentes                       #
+  αp = αd = alpha # Comentar para usar alphas diferentes                       
 
   return αp, αd
 end

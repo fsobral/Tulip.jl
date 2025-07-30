@@ -167,9 +167,9 @@ function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
   ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
   ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
 
-  println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
-  println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
-  println("μ = $(mpc.pt.μ)")
+  params.OutputLevel > 0 && println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
+  params.OutputLevel > 0 && println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
+  params.OutputLevel > 0 && println("μ = $(mpc.pt.μ)")
 
   # Check for feasibility
   if ρp <= ϵp
@@ -309,7 +309,6 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     # In particular, user limits should be checked last (if an optimal solution is found,
     # we want to report optimal, not user limits)
 
-    # TODO: Parei aqui.
     @timeit mpc.timer "update status" update_solver_status!(mpc,
                                                             params.TolerancePFeas,
                                                             params.ToleranceDFeas,
@@ -337,10 +336,10 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     try
       @timeit mpc.timer "Step" compute_step!(mpc, params)
 
-      println "Nº total de tentativas de broyden:  " mpc.n_tent_broyden
-      println "Nº total de iterações de Broyden:   " mpc.nitb
-      println "Nº total de correções alternativas: " mpc.n_corr_alt
-      println "Nº total de correções da jacobiana: " mpc.n_corr_jac
+      param.OutputLevel > 0 && println("Nº total de tentativas de broyden : ", mpc.n_tent_broyden)
+      param.OutputLevel > 0 && println("Nº total de iterações de Broyden  : ", mpc.nitb)
+      param.OutputLevel > 0 && println("Nº total de correções alternativas: ", mpc.n_corr_alt)
+      param.OutputLevel > 0 && println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
     catch err
 
       if isa(err, PosDefException) || isa(err, SingularException)
@@ -364,9 +363,7 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     mpc.niter += 1
   end
 
-  # TODO: trocar as saidas para coisas desse tipo
-  # params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
-  #println("Nº de iterações (algoritmo principal): ", mpc.niter)
+  params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
 
   # TODO: print message based on termination status
   params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
