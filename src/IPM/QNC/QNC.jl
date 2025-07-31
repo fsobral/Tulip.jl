@@ -104,10 +104,10 @@ include("step.jl")
 
 In-place computation of primal-dual residuals at point `pt`.
 """
-function compute_residuals!(mpc::QNC{T}) where{T}
+function compute_residuals!(qnc::QNC{T}) where{T}
 
-  pt, res = mpc.pt, mpc.res
-  dat = mpc.dat
+  pt, res = qnc.pt, qnc.res
+  dat = qnc.dat
 
   # Primal residual
   # rp = b - A*x
@@ -137,8 +137,8 @@ function compute_residuals!(mpc::QNC{T}) where{T}
   res.rd_nrm = norm(res.rd, Inf)
 
   # Compute primal and dual bounds
-  mpc.primal_objective = dot(dat.c, pt.x) + dat.c0
-  mpc.dual_objective   = (
+  qnc.primal_objective = dot(dat.c, pt.x) + dat.c0
+  qnc.dual_objective   = (
                           dot(dat.b, pt.y)
                           + dot(dat.l .* dat.lflag, pt.zl)
                           - dot(dat.u .* dat.uflag, pt.zu)
@@ -153,11 +153,11 @@ end
 
 Update status and return true if solver should stop.
 """
-function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
-  mpc.solver_status = Trm_Unknown
+function update_solver_status!(qnc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) where{T}
+  qnc.solver_status = Trm_Unknown
 
-  pt, res = mpc.pt, mpc.res
-  dat = mpc.dat
+  pt, res = qnc.pt, qnc.res
+  dat = qnc.dat
 
   ρp = max(
            res.rp_nrm / (one(T) + norm(dat.b, Inf)),
@@ -165,30 +165,30 @@ function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
            res.ru_nrm / (one(T) + norm(dat.u .* dat.uflag, Inf))
           )
   ρd = res.rd_nrm / (one(T) + norm(dat.c, Inf))
-  ρg = abs(mpc.primal_objective - mpc.dual_objective) / (one(T) + abs(mpc.primal_objective))
+  ρg = abs(qnc.primal_objective - qnc.dual_objective) / (one(T) + abs(qnc.primal_objective))
 
-  params.OutputLevel > 0 && println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
-  params.OutputLevel > 0 && println("αd = $(mpc.αd)\nαp = $(mpc.αp)")
-  params.OutputLevel > 0 && println("μ = $(mpc.pt.μ)")
+  #params.OutputLevel > 0 && println("ρd = $(ρd)\nρp = $(ρp)\nρg = $(ρg)")
+  #params.OutputLevel > 0 && println("αd = $(qnc.αd)\nαp = $(qnc.αp)")
+  #params.OutputLevel > 0 && println("μ = $(qnc.pt.μ)")
 
   # Check for feasibility
   if ρp <= ϵp
-    mpc.primal_status = Sln_FeasiblePoint
+    qnc.primal_status = Sln_FeasiblePoint
   else
-    mpc.primal_status = Sln_Unknown
+    qnc.primal_status = Sln_Unknown
   end
 
   if ρd <= ϵd
-    mpc.dual_status = Sln_FeasiblePoint
+    qnc.dual_status = Sln_FeasiblePoint
   else
-    mpc.dual_status = Sln_Unknown
+    qnc.dual_status = Sln_Unknown
   end
 
   # Check for optimal solution
   if ρp <= ϵp && ρd <= ϵd && ρg <= ϵg
-    mpc.primal_status = Sln_Optimal
-    mpc.dual_status   = Sln_Optimal
-    mpc.solver_status = Trm_Optimal
+    qnc.primal_status = Sln_Optimal
+    qnc.dual_status   = Sln_Optimal
+    qnc.solver_status = Trm_Optimal
     return nothing
   end
 
@@ -200,8 +200,8 @@ function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
          norm((pt.x .+ pt.xu) .* dat.uflag, Inf)
         ) * (norm(dat.c, Inf) / max(1, norm(dat.b, Inf))) < - ϵi * dot(dat.c, pt.x)
     # Dual infeasible, i.e., primal unbounded
-    mpc.primal_status = Sln_InfeasibilityCertificate
-    mpc.solver_status = Trm_DualInfeasible
+    qnc.primal_status = Sln_InfeasibilityCertificate
+    qnc.solver_status = Trm_DualInfeasible
     return nothing
   end
 
@@ -212,8 +212,8 @@ function update_solver_status!(mpc::QNC{T}, ϵp::T, ϵd::T, ϵg::T, ϵi::T) wher
                         norm(dat.b, Inf)
                        ) / (max(one(T), norm(dat.c, Inf)))  < (dot(dat.b, pt.y) + dot(dat.l .* dat.lflag, pt.zl)- dot(dat.u .* dat.uflag, pt.zu)) * ϵi
     # Primal infeasible
-    mpc.dual_status = Sln_InfeasibilityCertificate
-    mpc.solver_status = Trm_PrimalInfeasible
+    qnc.dual_status = Sln_InfeasibilityCertificate
+    qnc.solver_status = Trm_PrimalInfeasible
     return nothing
   end
 
@@ -224,19 +224,19 @@ end
     optimize!
 
 """
-function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
+function ipm_optimize!(qnc::QNC{T}, params::IPMOptions{T}) where{T}
   # TODO: pre-check whether model needs to be re-optimized.
   # This should happen outside of this function
-  dat = mpc.dat
+  dat = qnc.dat
 
   # Initialization
-  TimerOutputs.reset_timer!(mpc.timer)
+  TimerOutputs.reset_timer!(qnc.timer)
   tstart = time()
-  mpc.niter = 0
-  mpc.nitb = 0
-  mpc.n_corr_alt = 0
-  mpc.n_corr_jac = 0
-  mpc.n_tent_broyden = 0
+  qnc.niter = 0
+  qnc.nitb = 0
+  qnc.n_corr_alt = 0
+  qnc.n_corr_jac = 0
+  qnc.n_tent_broyden = 0
 
   # Print information about the problem
   if params.OutputLevel > 0
@@ -252,9 +252,9 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
 
 
     @printf "\nLinear solver options\n"
-    @printf "  %-12s : %s\n" "Arithmetic" KKT.arithmetic(mpc.kkt)
-    @printf "  %-12s : %s\n" "Backend" KKT.backend(mpc.kkt)
-    @printf "  %-12s : %s\n" "System" KKT.linear_system(mpc.kkt)
+    @printf "  %-12s : %s\n" "Arithmetic" KKT.arithmetic(qnc.kkt)
+    @printf "  %-12s : %s\n" "Backend" KKT.backend(qnc.kkt)
+    @printf "  %-12s : %s\n" "System" KKT.linear_system(qnc.kkt)
   end
 
   # IPM LOG
@@ -263,39 +263,39 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
   end
 
   # Set starting point
-  @timeit mpc.timer "Initial point" compute_starting_point(mpc)
+  @timeit qnc.timer "Initial point" compute_starting_point(qnc)
 
   # Main loop
   # Iteration 0 corresponds to the starting point.
   # Therefore, there is no numerical factorization before the first log is printed.
   # If the maximum number of iterations is set to 0, the only computation that occurs
   # is computing the residuals at the initial point.
-  @timeit mpc.timer "Main loop" while(true)
+  @timeit qnc.timer "Main loop" while(true)
 
     # I.A - Compute residuals at current iterate
-    @timeit mpc.timer "Residuals" compute_residuals!(mpc)
+    @timeit qnc.timer "Residuals" compute_residuals!(qnc)
 
-    update_mu!(mpc.pt)
+    update_mu!(qnc.pt)
 
     # I.B - Log
     # TODO: Put this in a logging function
     ttot = time() - tstart
     if params.OutputLevel > 0
       # Display log
-      @printf "%4d" mpc.niter
+      @printf "%4d" qnc.niter
 
       # Objectives
       ϵ = dat.objsense ? one(T) : -one(T)
-      @printf "  %+14.7e" ϵ * mpc.primal_objective
-      @printf "  %+14.7e" ϵ * mpc.dual_objective
+      @printf "  %+14.7e" ϵ * qnc.primal_objective
+      @printf "  %+14.7e" ϵ * qnc.dual_objective
 
       # Residuals
-      @printf "  %8.2e" max(mpc.res.rp_nrm, mpc.res.rl_nrm, mpc.res.ru_nrm)
-      @printf " %8.2e" mpc.res.rd_nrm
+      @printf "  %8.2e" max(qnc.res.rp_nrm, qnc.res.rl_nrm, qnc.res.ru_nrm)
+      @printf " %8.2e" qnc.res.rd_nrm
       @printf " %8s" "--"
 
       # Mu
-      @printf "  %7.1e" mpc.pt.μ
+      @printf "  %7.1e" qnc.pt.μ
 
       # Time
       @printf "  %.2f" ttot
@@ -309,7 +309,7 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     # In particular, user limits should be checked last (if an optimal solution is found,
     # we want to report optimal, not user limits)
 
-    @timeit mpc.timer "update status" update_solver_status!(mpc,
+    @timeit qnc.timer "update status" update_solver_status!(qnc,
                                                             params.TolerancePFeas,
                                                             params.ToleranceDFeas,
                                                             params.ToleranceRGap,
@@ -317,16 +317,16 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
                                                            )
 
     if (
-        mpc.solver_status == Trm_Optimal
-        || mpc.solver_status == Trm_PrimalInfeasible
-        || mpc.solver_status == Trm_DualInfeasible
+        qnc.solver_status == Trm_Optimal
+        || qnc.solver_status == Trm_PrimalInfeasible
+        || qnc.solver_status == Trm_DualInfeasible
        )
       break
-    elseif mpc.niter >= params.IterationsLimit
-      mpc.solver_status = Trm_IterationLimit
+    elseif qnc.niter >= params.IterationsLimit
+      qnc.solver_status = Trm_IterationLimit
       break
     elseif ttot >= params.TimeLimit
-      mpc.solver_status = Trm_TimeLimit
+      qnc.solver_status = Trm_TimeLimit
       break
     end
 
@@ -334,24 +334,24 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
     # For now, include the factorization in the step function
     # Q: should we use more arguments here?
     try
-      @timeit mpc.timer "Step" compute_step!(mpc, params)
+      @timeit qnc.timer "Step" compute_step!(qnc, params)
 
-      param.OutputLevel > 0 && println("Nº total de tentativas de broyden : ", mpc.n_tent_broyden)
-      param.OutputLevel > 0 && println("Nº total de iterações de Broyden  : ", mpc.nitb)
-      param.OutputLevel > 0 && println("Nº total de correções alternativas: ", mpc.n_corr_alt)
-      param.OutputLevel > 0 && println("Nº total de correções da jacobiana: ", mpc.n_corr_jac)
+      params.OutputLevel > 0 && println("Nº total de tentativas de broyden : ", qnc.n_tent_broyden)
+      params.OutputLevel > 0 && println("Nº total de iterações de Broyden  : ", qnc.nitb)
+      params.OutputLevel > 0 && println("Nº total de correções alternativas: ", qnc.n_corr_alt)
+      params.OutputLevel > 0 && println("Nº total de correções da jacobiana: ", qnc.n_corr_jac)
     catch err
 
       if isa(err, PosDefException) || isa(err, SingularException)
         # Numerical trouble while computing the factorization
-        mpc.solver_status = Trm_NumericalProblem
+        qnc.solver_status = Trm_NumericalProblem
 
       elseif isa(err, OutOfMemoryError)
         # Out of memory
-        mpc.solver_status = Trm_MemoryLimit
+        qnc.solver_status = Trm_MemoryLimit
 
       elseif isa(err, InterruptException)
-        mpc.solver_status = Trm_Unknown
+        qnc.solver_status = Trm_Unknown
       else
         # Unknown error: rethrow
         rethrow(err)
@@ -360,28 +360,28 @@ function ipm_optimize!(mpc::QNC{T}, params::IPMOptions{T}) where{T}
       rethrow(err)
       break
     end
-    mpc.niter += 1
+    qnc.niter += 1
   end
 
-  params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", mpc.niter)
+  params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", qnc.niter)
 
   # TODO: print message based on termination status
-  params.OutputLevel > 0 && println("Solver exited with status $((mpc.solver_status))")
+  params.OutputLevel > 0 && println("Solver exited with status $((qnc.solver_status))")
 
   return nothing
 end
 
-function compute_starting_point(mpc::QNC{T}) where{T}
+function compute_starting_point(qnc::QNC{T}) where{T}
 
-  pt = mpc.pt
-  dat = mpc.dat
+  pt = qnc.pt
+  dat = qnc.dat
   m, n, p = pt.m, pt.n, pt.p
 
-  KKT.update!(mpc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
+  KKT.update!(qnc.kkt, zeros(T, n), ones(T, n), T(1e-6) .* ones(T, m))
 
   # Get initial iterate
-  KKT.solve!(zeros(T, n), pt.y, mpc.kkt, false .* mpc.dat.b, mpc.dat.c)  # For y
-  KKT.solve!(pt.x, zeros(T, m), mpc.kkt, mpc.dat.b, false .* mpc.dat.c)  # For x
+  KKT.solve!(zeros(T, n), pt.y, qnc.kkt, false .* qnc.dat.b, qnc.dat.c)  # For y
+  KKT.solve!(pt.x, zeros(T, m), qnc.kkt, qnc.dat.b, false .* qnc.dat.c)  # For x
 
   # I. Recover positive primal-dual coordinates
   δx = one(T) + max(
@@ -411,8 +411,8 @@ function compute_starting_point(mpc::QNC{T}) where{T}
   pt.zl[dat.lflag] .+= δz
   pt.zu[dat.uflag] .+= δz
 
-  mpc.pt.τ   = one(T)
-  mpc.pt.κ   = zero(T)
+  qnc.pt.τ   = one(T)
+  qnc.pt.κ   = zero(T)
 
   # II. Balance complementarity products
   μ = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
@@ -425,7 +425,7 @@ function compute_starting_point(mpc::QNC{T}) where{T}
   pt.zu[dat.uflag] .+= dz
 
   # Update centrality parameter
-  update_mu!(mpc.pt)
+  update_mu!(qnc.pt)
 
   return nothing
 end

@@ -7,12 +7,12 @@ Compute next IP iterate for the QNC formulation.
 - `ipm`: The QNC optimizer model
 - `params`: Optimization parameters
 """
-function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:AbstractVector{T}}
+function compute_step!(qnc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:AbstractVector{T}}
 
   # Names
-  dat = mpc.dat
-  pt = mpc.pt
-  res = mpc.res
+  dat = qnc.dat
+  pt = qnc.pt
+  res = qnc.res
 
   m, n, p = pt.m, pt.n, pt.p
 
@@ -26,44 +26,44 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   θinv = θl .+ θu
 
   # Update regularizations
-  mpc.regP ./= 10
-  mpc.regD ./= 10
-  clamp!(mpc.regP, sqrt(eps(T)), one(T))
-  clamp!(mpc.regD, sqrt(eps(T)), one(T))
+  qnc.regP ./= 10
+  qnc.regD ./= 10
+  clamp!(qnc.regP, sqrt(eps(T)), one(T))
+  clamp!(qnc.regD, sqrt(eps(T)), one(T))
 
   # Update factorization
   nbump = 0
   while nbump <= 3
     try
-      @timeit mpc.timer "Factorization" KKT.update!(mpc.kkt, θinv, mpc.regP, mpc.regD)
+      @timeit qnc.timer "Factorization" KKT.update!(qnc.kkt, θinv, qnc.regP, qnc.regD)
       break
     catch err
       isa(err, PosDefException) || isa(err, ZeroPivotException) || rethrow(err)
 
       # Increase regularization
-      mpc.regD .*= 100
-      mpc.regP .*= 100
+      qnc.regD .*= 100
+      qnc.regP .*= 100
       nbump += 1
-      @warn "Increase regularizations to $(mpc.regP[1])"
+      @warn "Increase regularizations to $(qnc.regP[1])"
     end
   end
   # TODO: throw a custom error for numerical issues
   nbump < 3 || throw(PosDefException(0))  # factorization could not be saved
 
   # II. Compute search direction
-  Δ  = mpc.Δ
-  Δc = mpc.Δc
+  Δ  = qnc.Δ
+  Δc = qnc.Δc
 
   # Affine-scaling direction and associated step size
 
-  @timeit mpc.timer "Predictor" compute_predictor!(mpc::QNC)
-  mpc.αp, mpc.αd = max_step_length_pd(mpc.pt, mpc.Δ) 
+  @timeit qnc.timer "Predictor" compute_predictor!(qnc::QNC)
+  qnc.αp, qnc.αd = max_step_length_pd(qnc.pt, qnc.Δ) 
 
   # TODO: if step size is large enough, skip corrector
 
   # Corrector
   
-  @timeit mpc.timer "Corrector" Quasi_Newton_Corrector!(mpc, params)
+  @timeit qnc.timer "Corrector" Quasi_Newton_Corrector!(qnc, params)
   
   # Aqui, Δc já é a soma do passo de Newton e dos passos de Broyden multiplicada pelos seus tamanhos de passo.
   
@@ -80,21 +80,21 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
 #
 #  # Zero out the Newton RHS. This only needs to be done once.
 #  # TODO: not needed if no additional corrections
-#  rmul!(mpc.ξp, zero(T))
-#  rmul!(mpc.ξl, zero(T))
-#  rmul!(mpc.ξu, zero(T))
-#  rmul!(mpc.ξd, zero(T))
+#  rmul!(qnc.ξp, zero(T))
+#  rmul!(qnc.ξl, zero(T))
+#  rmul!(qnc.ξu, zero(T))
+#  rmul!(qnc.ξd, zero(T))
 #
-#  @timeit mpc.timer "Extra corr" while false#ncor < ncor_max
-#    compute_extra_correction!(mpc)
+#  @timeit qnc.timer "Extra corr" while false#ncor < ncor_max
+#    compute_extra_correction!(qnc)
 #
 #    # TODO: function to compute step size given Δ and Δc
 #    # This would avoid copying data around
-#    αp_c, αd_c = max_step_length_pd(mpc.pt, mpc.Δc)
+#    αp_c, αd_c = max_step_length_pd(qnc.pt, qnc.Δc)
 #
-#    if αp_c >= 1.01 * mpc.αp && αd_c >= 1.01 * mpc.αd
-#      mpc.αp = αp_c
-#      mpc.αd = αd_c
+#    if αp_c >= 1.01 * qnc.αp && αd_c >= 1.01 * qnc.αd
+#      qnc.αp = αp_c
+#      qnc.αd = αd_c
 #
 #      # Δ ⟵ Δc
 #      copyto!(Δ.x, Δc.x)
@@ -112,8 +112,8 @@ function compute_step!(mpc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
 #  end
 
   # Update current iterate
-  #    mpc.αp *= params.StepDampFactor
-  #    mpc.αd *= params.StepDampFactor
+  #    qnc.αp *= params.StepDampFactor
+  #    qnc.αd *= params.StepDampFactor
   pt.x  .+=  Δ.x   
   pt.xl .+=  Δ.xl  
   pt.xu .+=  Δ.xu  
@@ -127,7 +127,7 @@ end
 
 
 """
-    solve_newton_system!(Δ, mpc, ξp, ξd, ξu, ξg, ξxs, ξwz, ξtk)
+    solve_newton_system!(Δ, qnc, ξp, ξd, ξu, ξg, ξxs, ξwz, ξtk)
 
 Solve the Newton system
 ```math
@@ -160,37 +160,37 @@ Solve the Newton system
 
 # Arguments
 - `Δ`: Search direction, modified
-- `mpc`: The MPC optimizer
+- `qnc`: The MPC optimizer
 - `hx, hy, hz, h0`: Terms obtained in the preliminary augmented system solve
 - `ξp, ξd, ξu, ξg, ξxs, ξwz, ξtk`: Right-hand side vectors
 """
 function solve_newton_system!(Δ::Point{T, Tv},
-    mpc::QNC{T, Tv},
+    qnc::QNC{T, Tv},
     # Right-hand side
     ξp::Tv, ξl::Tv, ξu::Tv, ξd::Tv, ξxzl::Tv, ξxzu::Tv
   ) where{T, Tv<:AbstractVector{T}}
 
-  pt = mpc.pt
-  dat = mpc.dat
+  pt = qnc.pt
+  dat = qnc.dat
 
   # I. Solve augmented system
-  @timeit mpc.timer "ξd_"  begin
+  @timeit qnc.timer "ξd_"  begin
     ξd_ = copy(ξd)
     @. ξd_ += -((ξxzl + pt.zl .* ξl) ./ pt.xl) .* dat.lflag + ((ξxzu - pt.zu .* ξu) ./ pt.xu) .* dat.uflag
   end
-  @timeit mpc.timer "KKT" KKT.solve!(Δ.x, Δ.y, mpc.kkt, ξp, ξd_)
+  @timeit qnc.timer "KKT" KKT.solve!(Δ.x, Δ.y, qnc.kkt, ξp, ξd_)
 
   # II. Recover Δxl, Δxu
-  @timeit mpc.timer "Δxl" begin
+  @timeit qnc.timer "Δxl" begin
     @. Δ.xl = (-ξl + Δ.x) * dat.lflag
   end
-  @timeit mpc.timer "Δxu" begin
+  @timeit qnc.timer "Δxu" begin
     @. Δ.xu = ( ξu - Δ.x) * dat.uflag
   end
 
   # III. Recover Δzl, Δzu
-  @timeit mpc.timer "Δzl" @. Δ.zl = ((ξxzl - pt.zl .* Δ.xl) ./ pt.xl) .* dat.lflag
-  @timeit mpc.timer "Δzu" @. Δ.zu = ((ξxzu - pt.zu .* Δ.xu) ./ pt.xu) .* dat.uflag
+  @timeit qnc.timer "Δzl" @. Δ.zl = ((ξxzl - pt.zl .* Δ.xl) ./ pt.xl) .* dat.lflag
+  @timeit qnc.timer "Δzu" @. Δ.zu = ((ξxzu - pt.zu .* Δ.xu) ./ pt.xu) .* dat.uflag
 
   # IV. Set Δτ, Δκ to zero
   Δ.τ = zero(T)
@@ -222,27 +222,27 @@ function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:Abs
   αp = min(one(T), axl, axu)
   αd = min(one(T), azl, azu)
   alpha = min(αp, αd) 
-  αp = αd = alpha # Comentar para usar alphas diferentes                       
+#  αp = αd = alpha # Comentar para usar alphas diferentes                       
 
   return αp, αd
 end
 
 """
-    compute_predictor!(mpc::MPC) -> Nothing
+    compute_predictor!(qnc::MPC) -> Nothing
 """
-function compute_predictor!(mpc::QNC)
+function compute_predictor!(qnc::QNC)
 
   # Newton RHS
-  copyto!(mpc.ξp, mpc.res.rp)
-  copyto!(mpc.ξl, mpc.res.rl)
-  copyto!(mpc.ξu, mpc.res.ru)
-  copyto!(mpc.ξd, mpc.res.rd)
-  @. mpc.ξxzl = -(mpc.pt.xl .* mpc.pt.zl) .* mpc.dat.lflag
-  @. mpc.ξxzu = -(mpc.pt.xu .* mpc.pt.zu) .* mpc.dat.uflag
+  copyto!(qnc.ξp, qnc.res.rp)
+  copyto!(qnc.ξl, qnc.res.rl)
+  copyto!(qnc.ξu, qnc.res.ru)
+  copyto!(qnc.ξd, qnc.res.rd)
+  @. qnc.ξxzl = -(qnc.pt.xl .* qnc.pt.zl) .* qnc.dat.lflag
+  @. qnc.ξxzu = -(qnc.pt.xu .* qnc.pt.zu) .* qnc.dat.uflag
 
   # Compute affine-scaling direction
-  @timeit mpc.timer "Newton" solve_newton_system!(mpc.Δ, mpc,
-                                                  mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu
+  @timeit qnc.timer "Newton" solve_newton_system!(qnc.Δ, qnc,
+                                                  qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu
                                                  )
 
   # TODO: check Newton system residuals, perform iterative refinement if needed
@@ -252,21 +252,21 @@ end
 # ATENÇÃO: a função abaixo não é a original do Tulip. Para ver a original, veja o step.jl do MPC.
 
 #"""
-#    compute_corrector!(mpc::MPC) -> Nothing
+#    compute_corrector!(qnc::MPC) -> Nothing
 #"""
-#function compute_corrector!(mpc::QNC{T, Tv}, σ, alpha, xlb, xub, zlb, zub) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
+#function compute_corrector!(qnc::QNC{T, Tv}, σ, alpha, xlb, xub, zlb, zub) where{T, Tv<:AbstractVector{T}} # Com essa mudança, essa função calcula a primeira direção de Broyden (Jw d = - F_{\sigma \mu}). Preciso apenas tomar o cuidado de calcular os resíduos (primal, dual, gap) de forma correta (no ponto após o passo de Newton)
 #
 #  # WARNING: Eu acho que o deslocamento que estou fazendo no ponto pode estar alterando a matriz jacobiana, então apenas recalcular os resíduos não vai ser suficiente. 
 #
 #
-#  dat = mpc.dat
-#  pt = mpc.pt
-#  Δ = mpc.Δ
-#  Δc = mpc.Δc
+#  dat = qnc.dat
+#  pt = qnc.pt
+#  Δ = qnc.Δ
+#  Δc = qnc.Δc
 #
 #
 #  # Step length for affine-scaling direction
-#  #  αp_aff, αd_aff = mpc.αp, mpc.αd
+#  #  αp_aff, αd_aff = qnc.αp, qnc.αd
 #  #  μₐ = (
 #  #        dot((@. ((pt.xl + αp_aff * Δ.xl) * dat.lflag)), pt.zl .+ αd_aff .* Δ.zl)
 #  #        + dot((@. ((pt.xu + αp_aff * Δ.xu) * dat.uflag)), pt.zu .+ αd_aff .* Δ.zu)
@@ -275,47 +275,47 @@ end
 #
 #  # Newton RHS
 #  # compute_predictor! was called ⟹ ξp, ξl, ξu, ξd are already set
-#  @. mpc.ξxzl = (σ * pt.μ .- xlb .* zlb) .* dat.lflag
-#  @. mpc.ξxzu = (σ * pt.μ .- xub .* zub) .* dat.uflag
+#  @. qnc.ξxzl = (σ * pt.μ .- xlb .* zlb) .* dat.lflag
+#  @. qnc.ξxzu = (σ * pt.μ .- xub .* zub) .* dat.uflag
 #
 #  # Compute corrector
-#  @timeit mpc.timer "Newton" solve_newton_system!(mpc.Δc, mpc, mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu)
+#  @timeit qnc.timer "Newton" solve_newton_system!(qnc.Δc, qnc, qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu)
 #
 #  # TODO: check Newton system residuals, perform iterative refinement if needed
 #  return nothing
 #end
 
 #"""
-#    compute_extra_correction!(mpc) -> Nothing
+#    compute_extra_correction!(qnc) -> Nothing
 #"""
-#function compute_extra_correction!(mpc::MPC{T, Tv};
+#function compute_extra_correction!(qnc::MPC{T, Tv};
 #    δ::T = T(3 // 10),
 #    γ::T = T(1 // 10),
 #  ) where{T, Tv<:AbstractVector{T}}
-#  pt = mpc.pt
-#  Δ  = mpc.Δ
-#  Δc = mpc.Δc
-#  dat = mpc.dat
+#  pt = qnc.pt
+#  Δ  = qnc.Δ
+#  Δc = qnc.Δc
+#  dat = qnc.dat
 #
 #  # Tentative step sizes and centrality parameter
-#  αp, αd = mpc.αp, mpc.αd
+#  αp, αd = qnc.αp, qnc.αd
 #  αp_ = min(αp + δ, one(T))
 #  αd_ = min(αd + δ, one(T))
 #
 #  g  = dot(pt.xl, pt.zl) + dot(pt.xu, pt.zu)
-#  gₐ = dot((@. ((pt.xl + mpc.αp * Δ.xl) * dat.lflag)), pt.zl .+ mpc.αd .* Δ.zl) +
-#  dot((@. ((pt.xu + mpc.αp * Δ.xu) * dat.uflag)), pt.zu .+ mpc.αd .* Δ.zu)
+#  gₐ = dot((@. ((pt.xl + qnc.αp * Δ.xl) * dat.lflag)), pt.zl .+ qnc.αd .* Δ.zl) +
+#  dot((@. ((pt.xu + qnc.αp * Δ.xu) * dat.uflag)), pt.zu .+ qnc.αd .* Δ.zu)
 #  μ = (gₐ / g) * (gₐ / g) * (gₐ / pt.p)
 #
 #  # Newton RHS
 #  # ξp, ξl, ξu, ξd are already at zero
-#  @timeit mpc.timer "target" begin
-#    compute_target!(mpc.ξxzl, pt.xl, Δ.xl, pt.zl, Δ.zl, αp_, αd_, γ, μ)
-#    compute_target!(mpc.ξxzu, pt.xu, Δ.xu, pt.zu, Δ.zu, αp_, αd_, γ, μ)
+#  @timeit qnc.timer "target" begin
+#    compute_target!(qnc.ξxzl, pt.xl, Δ.xl, pt.zl, Δ.zl, αp_, αd_, γ, μ)
+#    compute_target!(qnc.ξxzu, pt.xu, Δ.xu, pt.zu, Δ.zu, αp_, αd_, γ, μ)
 #  end
 #
-#  @timeit mpc.timer "Newton" solve_newton_system!(Δc, mpc,
-#                                                  mpc.ξp, mpc.ξl, mpc.ξu, mpc.ξd, mpc.ξxzl, mpc.ξxzu
+#  @timeit qnc.timer "Newton" solve_newton_system!(Δc, qnc,
+#                                                  qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu
 #                                                 )
 #
 #  # Δc ⟵ Δp + Δc
