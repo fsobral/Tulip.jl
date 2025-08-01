@@ -30,6 +30,7 @@ mutable struct QNC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
   Working memory
   =====================#
   pt::Point{T, Tv}       # Current primal-dual iterate
+  pt_cp::Point{T, Tv}       # Current primal-dual iterate copy
   res::Residuals{T, Tv}  # Residuals at current iterate
 
   Δ::Point{T, Tv}   # Predictor
@@ -61,6 +62,7 @@ mutable struct QNC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
 
     # Working memory
     pt  = Point{T, Tv}(m, n, p, hflag=false)
+    pt_cp  = Point{T, Tv}(m, n, p, hflag=false)
     res = Residuals(
                     tzeros(Tv, m), tzeros(Tv, n), tzeros(Tv, n),
                     tzeros(Tv, n), zero(T),
@@ -89,7 +91,7 @@ mutable struct QNC{T, Tv, Tb, Ta, Tk} <: AbstractIPMOptimizer{T}
                                   T(Inf), T(-Inf),
                                   TimerOutput(),
                                   0, 0, 0, 0,
-                                  pt, res, Δ, Δc, zero(T), zero(T),
+                                  pt, pt_cp, res, Δ, Δc, zero(T), zero(T),
                                   ξp, ξl, ξu, ξd, ξxzl, ξxzu,
                                   kkt, regP, regD
                                  )
