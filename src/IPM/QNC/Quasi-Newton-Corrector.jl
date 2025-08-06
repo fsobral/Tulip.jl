@@ -1,8 +1,6 @@
-# TODO: Usar alphas separados para x e z;
-# TODO: Evitar cópias desnecessárias dos pontos;
-# TODO: Tentar não modificar as partes presumidamente imutáveis da estrutura QNC pelo Tulip original;
+# TODO: Tentar não modificar as partes presumidamente imutáveis da estrutura QNC pelo Tulip original; (fiz isso, com exceção do ponto, que tenho que atualizar para calcular os resíduos, mas retorno ao valor inicial sempre através de uma cópia)
 # TODO: Abrir as contas do método de Broyden para evitar concatenar e desconcatenar vetores;
-# TODO: Armazenar as cópias que precisam ser feitas dentro da estrutura GoodBroyden;
+# TODO: Armazenar as cópias que precisam ser feitas dentro da estrutura GoodBroyden; (eu fiz isso, mas guardei na estrutura qnc)
 
 
 using LinearAlgebra
@@ -78,20 +76,22 @@ LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a c
     u   = A.u[i] # Sem intenção de fazer cópias
     sb  = A.sb[i] # Sem intenção de fazer cópias
     #     rho = A.rho[i]
-    rho = 0
-    for j=1:(5*n+m) # produto interno dot(sb, b)
-      prod  = sb[j]
-      prod *= b[j]
-      rho  += prod
-    end
+    #    rho = 0
+    #    for j=1:(5*n+m) # produto interno dot(sb, b)
+    #      prod  = sb[j]
+    #      prod *= b[j]
+    #      rho  += prod
+    #    end
+    rho = dot(sb, b)
     rho /= A.rho[i]
 
     #        rho = dot(sb, b) / rho
     #        b .= b + (dot(sb, b) / rho) * u
     #        b .= b + rho * u
-    for j=1:(5*n+m)
-      b[j] = b[j] + rho * u[j]
-    end
+    #    for j=1:(5*n+m)
+    #      b[j] = b[j] + rho * u[j]
+    #    end
+    @. b += rho * u
 
   end
 
@@ -104,17 +104,22 @@ end
 """
 Updates the Good Broyden approximation.
 """
-function update!(B::GoodBroyden, s, b)
+function update!(B::GoodBroyden)
 
-  u           = b
+  #  u           = b
 
   size        = B.size + 1
-  B.u[size]   = u
-  B.rho[size] = 0
+  #  B.u[size]   = u
 
-  for i=1:length(s)
-    B.rho[size] += s[i]*(s[i] - B.u[size][i])
-  end
+  #  B.rho[size] = 0
+  #
+  #  for i=1:length(s)
+  #    B.rho[size] += s[i]*(s[i] - B.u[size][i])
+  #  end
+
+  s = B.sb[size]
+
+  B.rho[size] = dot(s, s .- B.u[size])
 
   # Substituição para evitar erros numéricos envolvendo divisão por zero
 
@@ -124,7 +129,7 @@ function update!(B::GoodBroyden, s, b)
     B.rho[size] = 1.0e-8
   end
 
-  B.sb[size] = s
+  #B.sb[size] = s
   B.size     = size
 
 end
@@ -260,44 +265,44 @@ function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
   # Recupera o iterando atual para o método alternativo
 
-    calculate_resulting_step!(GB_struct, mult, params)
-    
-    @. pt.x  += Δc.x
-    @. pt.xl += Δc.xl
-    @. pt.xu += Δc.xu
-    @. pt.y  += Δc.y
-    @. pt.zl += Δc.zl
-    @. pt.zu += Δc.zu
+  calculate_resulting_step!(GB_struct, mult, params)
 
-    # Recupera a direção nova
+  @. pt.x  += Δc.x
+  @. pt.xl += Δc.xl
+  @. pt.xu += Δc.xu
+  @. pt.y  += Δc.y
+  @. pt.zl += Δc.zl
+  @. pt.zu += Δc.zu
 
-    deconcatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+  # Recupera a direção nova
 
-    # Calcula o tamanho de passo na direção nova
+  deconcatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
-    alpha_b_p, alpha_b_d = max_step_length_pd(qnc.pt, qnc.Δc) 
+  # Calcula o tamanho de passo na direção nova
 
-    # Atualiza a direção nova com o tamanho de passo calculado
+  alpha_b_p, alpha_b_d = max_step_length_pd(qnc.pt, qnc.Δc) 
 
-    @. Δc.x    = (params.StepDampFactor * alpha_b_p) * Δc.x 
-    @. Δc.xl   = (params.StepDampFactor * alpha_b_p) * Δc.xl
-    @. Δc.xu   = (params.StepDampFactor * alpha_b_p) * Δc.xu
-    @. Δc.y    = (params.StepDampFactor * alpha_b_d) * Δc.y 
-    @. Δc.zl   = (params.StepDampFactor * alpha_b_d) * Δc.zl
-    @. Δc.zu   = (params.StepDampFactor * alpha_b_d) * Δc.zu
+  # Atualiza a direção nova com o tamanho de passo calculado
 
-    # Guarda a nova direção em sb
+  @. Δc.x    = (params.StepDampFactor * alpha_b_p) * Δc.x 
+  @. Δc.xl   = (params.StepDampFactor * alpha_b_p) * Δc.xl
+  @. Δc.xu   = (params.StepDampFactor * alpha_b_p) * Δc.xu
+  @. Δc.y    = (params.StepDampFactor * alpha_b_d) * Δc.y 
+  @. Δc.zl   = (params.StepDampFactor * alpha_b_d) * Δc.zl
+  @. Δc.zu   = (params.StepDampFactor * alpha_b_d) * Δc.zu
 
-    concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+  # Guarda a nova direção em sb
 
-    # Retorna o iterando para seu valor original
+  concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
-    @. pt.x  = pt_cp.x 
-    @. pt.xl = pt_cp.xl
-    @. pt.xu = pt_cp.xu
-    @. pt.y  = pt_cp.y 
-    @. pt.zl = pt_cp.zl
-    @. pt.zu = pt_cp.zu
+  # Retorna o iterando para seu valor original
+
+  @. pt.x  = pt_cp.x 
+  @. pt.xl = pt_cp.xl
+  @. pt.xu = pt_cp.xu
+  @. pt.y  = pt_cp.y 
+  @. pt.zl = pt_cp.zl
+  @. pt.zu = pt_cp.zu
 
 end
 
@@ -329,7 +334,7 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   #@. pt.zu += (mult * params.StepDampFactor * qnc.αd) * Δ.zu
 
   calculate_resulting_step!(GB_struct, mult, params)
-  
+
   @. pt.x  += Δc.x
   @. pt.xl += Δc.xl
   @. pt.xu += Δc.xu
@@ -360,7 +365,13 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
   ldiv!(GB_struct) # Pressupõe que os resíduos após o passo de Newton estejam guardados em qnc
 
-  sb = zeros(5*n+m) # Cria o vetor sb
+  #  sb = zeros(5*n+m) # Cria o vetor sb
+
+  # Cria o vetor sb
+
+  GB_struct.sb[GB_struct.size + 1] = spzeros(5*n+m) 
+  sb = GB_struct.sb[GB_struct.size + 1]
+
   concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
 
   if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
@@ -398,10 +409,16 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   @. pt.zu = pt_cp.zu
 
   ldiv!(GB_struct) # Pressupõe que os resíduos após o passo de Newton estejam guardados em qnc
-  u = zeros(5*n+m) # Cria o vetor u
+  #  u = zeros(5*n+m) # Cria o vetor u
+
+  # Cria o vetor u
+
+  GB_struct.u[GB_struct.size + 1] = spzeros(5*n+m) 
+  u = GB_struct.u[GB_struct.size + 1]
+
   concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
 
-  update!(GB_struct, sb, u)
+  update!(GB_struct)
 
   it += 1
 
@@ -447,8 +464,13 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
     gb_size = GB_struct.size
 
+    # Cria o vetor sb
+
+    GB_struct.sb[GB_struct.size + 1] = spzeros(5*n+m) 
+    sb = GB_struct.sb[GB_struct.size + 1]
+
     @. sb = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
-    @. sb = sb + GB_struct.u[gb_size]
+    @. sb += GB_struct.u[gb_size]
 
     deconcatenate(GB_struct.qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
@@ -490,10 +512,15 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
     @. pt.zl = pt_cp.zl
     @. pt.zu = pt_cp.zu
 
+    # Cria o vetor u
+
+    GB_struct.u[GB_struct.size + 1] = spzeros(5*n+m) 
+    u = GB_struct.u[GB_struct.size + 1]
+
     ldiv!(GB_struct) # Pressupõe que os resíduos do iterando mais atual estejam guardados em qnc
     concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
-    update!(GB_struct, sb, u)
+    update!(GB_struct)
 
     it += 1
 
