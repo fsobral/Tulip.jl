@@ -62,11 +62,11 @@ function compute_step!(qnc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   # TODO: if step size is large enough, skip corrector
 
   # Corrector
-  
+
   @timeit qnc.timer "Corrector" Quasi_Newton_Corrector!(qnc, params)
-  
+
   # Aqui, Δc já é a soma do passo de Newton e dos passos de Broyden multiplicada pelos seus tamanhos de passo.
-  
+
   copyto!(Δ.x,  Δc.x)
   copyto!(Δ.xl, Δc.xl)
   copyto!(Δ.xu, Δc.xu)
@@ -74,42 +74,42 @@ function compute_step!(qnc::QNC{T, Tv}, params::IPMOptions{T}) where{T, Tv<:Abst
   copyto!(Δ.zl, Δc.zl)
   copyto!(Δ.zu, Δc.zu)
 
-#  # Extra centrality corrections
-#  ncor = 0
-#  ncor_max = params.CorrectionLimit
-#
-#  # Zero out the Newton RHS. This only needs to be done once.
-#  # TODO: not needed if no additional corrections
-#  rmul!(qnc.ξp, zero(T))
-#  rmul!(qnc.ξl, zero(T))
-#  rmul!(qnc.ξu, zero(T))
-#  rmul!(qnc.ξd, zero(T))
-#
-#  @timeit qnc.timer "Extra corr" while false#ncor < ncor_max
-#    compute_extra_correction!(qnc)
-#
-#    # TODO: function to compute step size given Δ and Δc
-#    # This would avoid copying data around
-#    αp_c, αd_c = max_step_length_pd(qnc.pt, qnc.Δc)
-#
-#    if αp_c >= 1.01 * qnc.αp && αd_c >= 1.01 * qnc.αd
-#      qnc.αp = αp_c
-#      qnc.αd = αd_c
-#
-#      # Δ ⟵ Δc
-#      copyto!(Δ.x, Δc.x)
-#      copyto!(Δ.xl, Δc.xl)
-#      copyto!(Δ.xu, Δc.xu)
-#      copyto!(Δ.y, Δc.y)
-#      copyto!(Δ.zl, Δc.zl)
-#      copyto!(Δ.zu, Δc.zu)
-#
-#      ncor += 1
-#    else
-#      # Not enough improvement: abort
-#      break
-#    end
-#  end
+  #  # Extra centrality corrections
+  #  ncor = 0
+  #  ncor_max = params.CorrectionLimit
+  #
+  #  # Zero out the Newton RHS. This only needs to be done once.
+  #  # TODO: not needed if no additional corrections
+  #  rmul!(qnc.ξp, zero(T))
+  #  rmul!(qnc.ξl, zero(T))
+  #  rmul!(qnc.ξu, zero(T))
+  #  rmul!(qnc.ξd, zero(T))
+  #
+  #  @timeit qnc.timer "Extra corr" while false#ncor < ncor_max
+  #    compute_extra_correction!(qnc)
+  #
+  #    # TODO: function to compute step size given Δ and Δc
+  #    # This would avoid copying data around
+  #    αp_c, αd_c = max_step_length_pd(qnc.pt, qnc.Δc)
+  #
+  #    if αp_c >= 1.01 * qnc.αp && αd_c >= 1.01 * qnc.αd
+  #      qnc.αp = αp_c
+  #      qnc.αd = αd_c
+  #
+  #      # Δ ⟵ Δc
+  #      copyto!(Δ.x, Δc.x)
+  #      copyto!(Δ.xl, Δc.xl)
+  #      copyto!(Δ.xu, Δc.xu)
+  #      copyto!(Δ.y, Δc.y)
+  #      copyto!(Δ.zl, Δc.zl)
+  #      copyto!(Δ.zu, Δc.zu)
+  #
+  #      ncor += 1
+  #    else
+  #      # Not enough improvement: abort
+  #      break
+  #    end
+  #  end
 
   # Update current iterate
   #    qnc.αp *= params.StepDampFactor
@@ -221,8 +221,7 @@ function max_step_length_pd(pt::Point{T, Tv}, δ::Point{T, Tv}) where{T, Tv<:Abs
 
   αp = min(one(T), axl, axu)
   αd = min(one(T), azl, azu)
-  alpha = min(αp, αd) 
-#  αp = αd = alpha # Comentar para usar alphas diferentes                       
+  #αp = αd = min(αp, αd) # Comentar para usar alphas diferentes # Descomentar apenas para replicar o comportamento antigo                      
 
   return αp, αd
 end

@@ -37,33 +37,33 @@ LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a c
   m  = pt.m
   n  = pt.n
 
-#  # Copiar o iterando atual de Broyden
-#
-#  cp_x_b   = copy(pt.x)
-#  cp_xl_b  = copy(pt.xl)
-#  cp_xu_b  = copy(pt.xu)
-#  cp_y_b   = copy(pt.y)
-#  cp_zl_b  = copy(pt.zl)
-#  cp_zu_b  = copy(pt.zu)
+  #  # Copiar o iterando atual de Broyden
+  #
+  #  cp_x_b   = copy(pt.x)
+  #  cp_xl_b  = copy(pt.xl)
+  #  cp_xu_b  = copy(pt.xu)
+  #  cp_y_b   = copy(pt.y)
+  #  cp_zl_b  = copy(pt.zl)
+  #  cp_zu_b  = copy(pt.zu)
 
-#  # Recuperar a jacobiana original (na função solve_newton_system!, a jacobiana é calculada no ponto atual guardado em qnc. Isto significa que não estaríamos usando a mesma jacobiana do passo preditor. Portanto, ao retornar ao ponto anterior ao passo preditor, estamos garantindo que a mesma jacobiana do passo preditor será utilizada como B_0 pelo método de Broyden)
-#
-#  pt.x  .= cp_x 
-#  pt.xl .= cp_xl
-#  pt.xu .= cp_xu
-#  pt.y  .= cp_y 
-#  pt.zl .= cp_zl
-#  pt.zu .= cp_zu
+  #  # Recuperar a jacobiana original (na função solve_newton_system!, a jacobiana é calculada no ponto atual guardado em qnc. Isto significa que não estaríamos usando a mesma jacobiana do passo preditor. Portanto, ao retornar ao ponto anterior ao passo preditor, estamos garantindo que a mesma jacobiana do passo preditor será utilizada como B_0 pelo método de Broyden)
+  #
+  #  pt.x  .= cp_x 
+  #  pt.xl .= cp_xl
+  #  pt.xu .= cp_xu
+  #  pt.y  .= cp_y 
+  #  pt.zl .= cp_zl
+  #  pt.zu .= cp_zu
 
   # O comando abaixo pressupõe que o lado direito correto já está armazenado em qnc. Também pressupõe que o ponto atual armazenado em qnc seja o ponto antes do passo preditor (pois caso contrário, B_0 não seria a jacobiana utilizada no passo preditor).
   solve_newton_system!(qnc.Δc, qnc, qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu)
 
-#  pt.x  .=  cp_x_b 
-#  pt.xl .= cp_xl_b
-#  pt.xu .= cp_xu_b
-#  pt.y  .=  cp_y_b 
-#  pt.zl .= cp_zl_b
-#  pt.zu .= cp_zu_b
+  #  pt.x  .=  cp_x_b 
+  #  pt.xl .= cp_xl_b
+  #  pt.xu .= cp_xu_b
+  #  pt.y  .=  cp_y_b 
+  #  pt.zl .= cp_zl_b
+  #  pt.zu .= cp_zu_b
 
   Δc = qnc.Δc
 
@@ -95,7 +95,7 @@ LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a c
 
   end
 
-  Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(A.qnc, b)
+  deconcatenate(A.qnc, b, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
   nothing
 
@@ -117,7 +117,7 @@ function update!(B::GoodBroyden, s, b)
   end
 
   # Substituição para evitar erros numéricos envolvendo divisão por zero
-  
+
   if -1.0e-8 <= B.rho[size] <= 0
     B.rho[size] = -1.0e-8
   elseif 0 <= B.rho[size] <= 1.0e-8 
@@ -135,7 +135,7 @@ function positivity_test(qnc)
   n  = qnc.pt.n
 
   # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
-  
+
   for i=1:n
     if (pt.xl[i] < 0) || (pt.zl[i] < 0) || (pt.xu[i] < 0) || (pt.zu[i] < 0)
       return false
@@ -193,18 +193,111 @@ function Broyden_parada(qnc, it, it_max, eps, sig)
 
 end 
 
-function deconcatenate(qnc, b)
+function deconcatenate(qnc, v, x, xl, xu, y, zl, zu)
+
+  m   = qnc.pt.m
+  n   = qnc.pt.n
+  x  .= v[1:n]
+  xl .= v[n+1:2*n]
+  xu .= v[2*n+1:3*n] 
+  y  .= v[3*n+1:3*n+m] 
+  zl .= v[3*n+m+1:4*n+m] 
+  zu .= v[4*n+m+1:5*n+m] 
+
+end
+
+function concatenate(qnc, v, x, xl, xu, y, zl, zu)
 
   m    = qnc.pt.m
   n    = qnc.pt.n
-  rp   = b[1:n]
-  rl   = b[n+1:2*n]
-  ru   = b[2*n+1:3*n] 
-  rd   = b[3*n+1:3*n+m] 
-  rxzl = b[3*n+m+1:4*n+m] 
-  rxzu = b[4*n+m+1:5*n+m] 
+  v[1:n]           .= x
+  v[n+1:2*n]       .= xl
+  v[2*n+1:3*n]     .= xu
+  v[3*n+1:3*n+m]   .= y
+  v[3*n+m+1:4*n+m] .= zl
+  v[4*n+m+1:5*n+m] .= zu 
 
-  return rp, rl, ru, rd, rxzl, rxzu
+end
+
+function calculate_resulting_step!(GB_struct, mult, params)
+
+  qnc = GB_struct.qnc
+  Δ   = qnc.Δ
+  Δc  = qnc.Δc
+  m   = qnc.pt.m
+  n   = qnc.pt.n
+
+  # Calcula a direção resultante do passo de Newton junto com os passos de Broyden
+
+  @. Δc.x  = (mult * params.StepDampFactor * qnc.αp) * Δ.x 
+  @. Δc.xl = (mult * params.StepDampFactor * qnc.αp) * Δ.xl
+  @. Δc.xu = (mult * params.StepDampFactor * qnc.αp) * Δ.xu
+  @. Δc.y  = (mult * params.StepDampFactor * qnc.αd) * Δ.y 
+  @. Δc.zl = (mult * params.StepDampFactor * qnc.αd) * Δ.zl
+  @. Δc.zu = (mult * params.StepDampFactor * qnc.αd) * Δ.zu
+
+  for i=1:GB_struct.size 
+    @. Δc.x  += GB_struct.sb[i][1       : n]
+    @. Δc.xl += GB_struct.sb[i][n+1     : 2*n]
+    @. Δc.xu += GB_struct.sb[i][2*n+1   : 3*n]
+    @. Δc.y  += GB_struct.sb[i][3*n+1   : 3*n+m]
+    @. Δc.zl += GB_struct.sb[i][3*n+m+1 : 4*n+m]
+    @. Δc.zu += GB_struct.sb[i][4*n+m+1 : 5*n+m]
+  end
+
+end
+
+function Broyden_alternative_step!(GB_struct, mult, params, sb)
+
+  qnc = GB_struct.qnc
+  dat = qnc.dat
+  pt  = qnc.pt
+  pt_cp  = qnc.pt_cp
+  Δ   = qnc.Δ
+  Δc  = qnc.Δc
+
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+
+  # Recupera o iterando atual para o método alternativo
+
+    calculate_resulting_step!(GB_struct, mult, params)
+    
+    @. pt.x  += Δc.x
+    @. pt.xl += Δc.xl
+    @. pt.xu += Δc.xu
+    @. pt.y  += Δc.y
+    @. pt.zl += Δc.zl
+    @. pt.zu += Δc.zu
+
+    # Recupera a direção nova
+
+    deconcatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+
+    # Calcula o tamanho de passo na direção nova
+
+    alpha_b_p, alpha_b_d = max_step_length_pd(qnc.pt, qnc.Δc) 
+
+    # Atualiza a direção nova com o tamanho de passo calculado
+
+    @. Δc.x    = (params.StepDampFactor * alpha_b_p) * Δc.x 
+    @. Δc.xl   = (params.StepDampFactor * alpha_b_p) * Δc.xl
+    @. Δc.xu   = (params.StepDampFactor * alpha_b_p) * Δc.xu
+    @. Δc.y    = (params.StepDampFactor * alpha_b_d) * Δc.y 
+    @. Δc.zl   = (params.StepDampFactor * alpha_b_d) * Δc.zl
+    @. Δc.zu   = (params.StepDampFactor * alpha_b_d) * Δc.zu
+
+    # Guarda a nova direção em sb
+
+    concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+
+    # Retorna o iterando para seu valor original
+
+    @. pt.x  = pt_cp.x 
+    @. pt.xl = pt_cp.xl
+    @. pt.xu = pt_cp.xu
+    @. pt.y  = pt_cp.y 
+    @. pt.zl = pt_cp.zl
+    @. pt.zu = pt_cp.zu
 
 end
 
@@ -228,12 +321,21 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
   # Anda na direção preditora, com o tamanho de passo especificado, apenas para calcular os resíduos
 
-  pt.x  .+= (mult * params.StepDampFactor * qnc.αp) .* Δ.x
-  pt.xl .+= (mult * params.StepDampFactor * qnc.αp) .* Δ.xl
-  pt.xu .+= (mult * params.StepDampFactor * qnc.αp) .* Δ.xu
-  pt.y  .+= (mult * params.StepDampFactor * qnc.αd) .* Δ.y
-  pt.zl .+= (mult * params.StepDampFactor * qnc.αd) .* Δ.zl
-  pt.zu .+= (mult * params.StepDampFactor * qnc.αd) .* Δ.zu
+  #@. pt.x  += (mult * params.StepDampFactor * qnc.αp) * Δ.x
+  #@. pt.xl += (mult * params.StepDampFactor * qnc.αp) * Δ.xl
+  #@. pt.xu += (mult * params.StepDampFactor * qnc.αp) * Δ.xu
+  #@. pt.y  += (mult * params.StepDampFactor * qnc.αd) * Δ.y
+  #@. pt.zl += (mult * params.StepDampFactor * qnc.αd) * Δ.zl
+  #@. pt.zu += (mult * params.StepDampFactor * qnc.αd) * Δ.zu
+
+  calculate_resulting_step!(GB_struct, mult, params)
+  
+  @. pt.x  += Δc.x
+  @. pt.xl += Δc.xl
+  @. pt.xu += Δc.xu
+  @. pt.y  += Δc.y
+  @. pt.zl += Δc.zl
+  @. pt.zu += Δc.zu
 
   # Calcula os resíduos no ponto atual (parte do lado direito em solve_newton_system!)
 
@@ -244,28 +346,25 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   copyto!(qnc.ξd, qnc.res.rd)
   pt.μ = cp_mu
 
-  @. qnc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
-  @. qnc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
+  @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
+  @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
   # Retorna o iterando para seu valor original
 
-  pt.x  .= pt_cp.x 
-  pt.xl .= pt_cp.xl
-  pt.xu .= pt_cp.xu
-  pt.y  .= pt_cp.y 
-  pt.zl .= pt_cp.zl
-  pt.zu .= pt_cp.zu
+  @. pt.x  = pt_cp.x 
+  @. pt.xl = pt_cp.xl
+  @. pt.xu = pt_cp.xu
+  @. pt.y  = pt_cp.y 
+  @. pt.zl = pt_cp.zl
+  @. pt.zu = pt_cp.zu
 
   ldiv!(GB_struct) # Pressupõe que os resíduos após o passo de Newton estejam guardados em qnc
 
+  sb = zeros(5*n+m) # Cria o vetor sb
+  concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
+
   if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
-    alpha_b_p, alpha_b_d = max_step_length_pd(qnc.pt, qnc.Δc)  
-    Δc.x    .= (params.StepDampFactor * alpha_b_p) .* Δc.x 
-    Δc.xl   .= (params.StepDampFactor * alpha_b_p) .* Δc.xl
-    Δc.xu   .= (params.StepDampFactor * alpha_b_p) .* Δc.xu
-    Δc.y    .= (params.StepDampFactor * alpha_b_d) .* Δc.y 
-    Δc.zl   .= (params.StepDampFactor * alpha_b_d) .* Δc.zl
-    Δc.zu   .= (params.StepDampFactor * alpha_b_d) .* Δc.zu
+    Broyden_alternative_step!(GB_struct, mult, params, sb)
   end
 
   # Atualiza o ponto apenas para calcular os novos resíduos
@@ -277,8 +376,6 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   @. pt.zl += (mult * params.StepDampFactor * qnc.αd) * Δ.zl + Δc.zl
   @. pt.zu += (mult * params.StepDampFactor * qnc.αd) * Δ.zu + Δc.zu
 
-  sb = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
-
   # Calcula -F_{sigma * mu} (w + d_b) para depois calcular u
 
   compute_residuals!(qnc)
@@ -288,20 +385,21 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   copyto!(qnc.ξd, qnc.res.rd)
   pt.μ = cp_mu
 
-  @. qnc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
-  @. qnc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
+  @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
+  @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
- # Retorna o iterando para seu valor original
+  # Retorna o iterando para seu valor original
 
-  pt.x  .= pt_cp.x 
-  pt.xl .= pt_cp.xl
-  pt.xu .= pt_cp.xu
-  pt.y  .= pt_cp.y 
-  pt.zl .= pt_cp.zl
-  pt.zu .= pt_cp.zu
+  @. pt.x  = pt_cp.x 
+  @. pt.xl = pt_cp.xl
+  @. pt.xu = pt_cp.xu
+  @. pt.y  = pt_cp.y 
+  @. pt.zl = pt_cp.zl
+  @. pt.zu = pt_cp.zu
 
   ldiv!(GB_struct) # Pressupõe que os resíduos após o passo de Newton estejam guardados em qnc
-  u = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+  u = zeros(5*n+m) # Cria o vetor u
+  concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
 
   update!(GB_struct, sb, u)
 
@@ -315,43 +413,27 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
     # Stopping criteria
 
-      # Calcula a direção resultante do passo de Newton junto com os passos de Broyden
-
-      @. Δc.x  = (mult * params.StepDampFactor * qnc.αp) * Δ.x 
-      @. Δc.xl = (mult * params.StepDampFactor * qnc.αp) * Δ.xl
-      @. Δc.xu = (mult * params.StepDampFactor * qnc.αp) * Δ.xu
-      @. Δc.y  = (mult * params.StepDampFactor * qnc.αd) * Δ.y 
-      @. Δc.zl = (mult * params.StepDampFactor * qnc.αd) * Δ.zl
-      @. Δc.zu = (mult * params.StepDampFactor * qnc.αd) * Δ.zu
-
-      for i=1:(it-1)
-        @. Δc.x  += GB_struct.sb[i][1       : n]
-        @. Δc.xl += GB_struct.sb[i][n+1     : 2*n]
-        @. Δc.xu += GB_struct.sb[i][2*n+1   : 3*n]
-        @. Δc.y  += GB_struct.sb[i][3*n+1   : 3*n+m]
-        @. Δc.zl += GB_struct.sb[i][3*n+m+1 : 4*n+m]
-        @. Δc.zu += GB_struct.sb[i][4*n+m+1 : 5*n+m]
-      end
+    calculate_resulting_step!(GB_struct, mult, params)
 
     # Atualizar o ponto apenas para testar o criterio de parada
 
-    pt.x  .+=  Δc.x
-    pt.xl .+=  Δc.xl
-    pt.xu .+=  Δc.xu
-    pt.y  .+=  Δc.y
-    pt.zl .+=  Δc.zl
-    pt.zu .+=  Δc.zu
+    @. pt.x  +=  Δc.x
+    @. pt.xl +=  Δc.xl
+    @. pt.xu +=  Δc.xu
+    @. pt.y  +=  Δc.y
+    @. pt.zl +=  Δc.zl
+    @. pt.zu +=  Δc.zu
 
     stop, convergence, accept_point = Broyden_parada(qnc, it, it_max, eps, sig)
 
-  # Retorna o iterando para seu valor original
+    # Retorna o iterando para seu valor original
 
-    pt.x  .= pt_cp.x 
-    pt.xl .= pt_cp.xl
-    pt.xu .= pt_cp.xu
-    pt.y  .= pt_cp.y 
-    pt.zl .= pt_cp.zl
-    pt.zu .= pt_cp.zu
+    @. pt.x  = pt_cp.x 
+    @. pt.xl = pt_cp.xl
+    @. pt.xu = pt_cp.xu
+    @. pt.y  = pt_cp.y 
+    @. pt.zl = pt_cp.zl
+    @. pt.zu = pt_cp.zu
 
     if stop == true
       params.OutputLevel > 0 &&  println("Parou por que? stop / convergence / accept_point : ", (stop, convergence, accept_point))
@@ -363,50 +445,29 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
       return accept_point
     end
 
-    sb  = (dot(GB_struct.sb[it-1], GB_struct.u[it-1]) / GB_struct.rho[it-1]) * GB_struct.u[it-1]
-    sb .= sb .+ GB_struct.u[it-1]
+    gb_size = GB_struct.size
 
-    Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu = deconcatenate(GB_struct.qnc, sb)
+    @. sb = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
+    @. sb = sb + GB_struct.u[gb_size]
+
+    deconcatenate(GB_struct.qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
     # Multiplicar a direção pelo tamanho do passo e armazenar tanto no qnc quanto na estrutura GoodBroyden
 
     if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
-      alpha_b_p, alpha_b_d = max_step_length_pd(qnc.pt, qnc.Δc)  
-      Δc.x  *= alpha_b_p * params.StepDampFactor  
-      Δc.xl *= alpha_b_p * params.StepDampFactor     
-      Δc.xu *= alpha_b_p * params.StepDampFactor 
-      Δc.y  *= alpha_b_d * params.StepDampFactor 
-      Δc.zl *= alpha_b_d * params.StepDampFactor 
-      Δc.zu *= alpha_b_d * params.StepDampFactor 
-      sb = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+      Broyden_alternative_step!(GB_struct, mult, params, sb)
     end
 
-      # Calcula a direção resultante do passo de Newton junto com os passos de Broyden
-
-      @. Δc.x  += (mult * params.StepDampFactor * qnc.αp) * Δ.x 
-      @. Δc.xl += (mult * params.StepDampFactor * qnc.αp) * Δ.xl
-      @. Δc.xu += (mult * params.StepDampFactor * qnc.αp) * Δ.xu
-      @. Δc.y  += (mult * params.StepDampFactor * qnc.αd) * Δ.y 
-      @. Δc.zl += (mult * params.StepDampFactor * qnc.αd) * Δ.zl
-      @. Δc.zu += (mult * params.StepDampFactor * qnc.αd) * Δ.zu
-
-      for i=1:(it-1)
-        @. Δc.x  += GB_struct.sb[i][1       : n]
-        @. Δc.xl += GB_struct.sb[i][n+1     : 2*n]
-        @. Δc.xu += GB_struct.sb[i][2*n+1   : 3*n]
-        @. Δc.y  += GB_struct.sb[i][3*n+1   : 3*n+m]
-        @. Δc.zl += GB_struct.sb[i][3*n+m+1 : 4*n+m]
-        @. Δc.zu += GB_struct.sb[i][4*n+m+1 : 5*n+m]
-      end
+    calculate_resulting_step!(GB_struct, mult, params)
 
     # Atualizar o ponto apenas para calcular os resíduos
 
-    pt.x  .+=  Δc.x
-    pt.xl .+=  Δc.xl
-    pt.xu .+=  Δc.xu
-    pt.y  .+=  Δc.y
-    pt.zl .+=  Δc.zl
-    pt.zu .+=  Δc.zu
+    @. pt.x  +=  Δc.x  + sb[1       : n]
+    @. pt.xl +=  Δc.xl + sb[n+1     : 2*n]
+    @. pt.xu +=  Δc.xu + sb[2*n+1   : 3*n]
+    @. pt.y  +=  Δc.y  + sb[3*n+1   : 3*n+m]
+    @. pt.zl +=  Δc.zl + sb[3*n+m+1 : 4*n+m]
+    @. pt.zu +=  Δc.zu + sb[4*n+m+1 : 5*n+m]
 
     # Calcular novo u
 
@@ -417,20 +478,20 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
     copyto!(qnc.ξd, qnc.res.rd)
     pt.μ = cp_mu
 
-    @. qnc.ξxzl = (sig * pt.μ .- pt.xl .* pt.zl) .* dat.lflag
-    @. qnc.ξxzu = (sig * pt.μ .- pt.xu .* pt.zu) .* dat.uflag
+    @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
+    @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
-  # Retorna o iterando para seu valor original
+    # Retorna o iterando para seu valor original
 
-    pt.x  .= pt_cp.x 
-    pt.xl .= pt_cp.xl
-    pt.xu .= pt_cp.xu
-    pt.y  .= pt_cp.y 
-    pt.zl .= pt_cp.zl
-    pt.zu .= pt_cp.zu
+    @. pt.x  = pt_cp.x 
+    @. pt.xl = pt_cp.xl
+    @. pt.xu = pt_cp.xu
+    @. pt.y  = pt_cp.y 
+    @. pt.zl = pt_cp.zl
+    @. pt.zu = pt_cp.zu
 
     ldiv!(GB_struct) # Pressupõe que os resíduos do iterando mais atual estejam guardados em qnc
-    u = vcat(Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+    concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
     update!(GB_struct, sb, u)
 
@@ -443,7 +504,7 @@ end
 function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-8, it_max = 5) # it_max padrao eh 5
 
   # Names
-  
+
   dat = qnc.dat
   pt  = qnc.pt
   res = qnc.res
@@ -457,16 +518,16 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
   b = dat.b
   c = dat.c
 
-######### É bom levar em conta que o Tulip resolve um sistema envolvendo as seguintes condições KKT:
-######### A^T \lambda + zl - zu  = c
-#########                   A x  = b
-#########           xl_i * zl_i  = \tau, i = 1, ..., n
-#########           xu_i * zu_i  = \tau, i = 1, ..., n
-#########        xl, xu, zl, zu >= 0
-######### Então, eles estão em busca de um ponto com 5 entradas (que também são vetores): (x, xl, xu, zl, zu).
-######### Também vou deixar aqui mais duas fórmulas para eu lembrar depois:
-######### x - xl = l
-######### x + xu = u
+  ######### É bom levar em conta que o Tulip resolve um sistema envolvendo as seguintes condições KKT:
+  ######### A^T \lambda + zl - zu  = c
+  #########                   A x  = b
+  #########           xl_i * zl_i  = \tau, i = 1, ..., n
+  #########           xu_i * zu_i  = \tau, i = 1, ..., n
+  #########        xl, xu, zl, zu >= 0
+  ######### Então, eles estão em busca de um ponto com 5 entradas (que também são vetores): (x, xl, xu, zl, zu).
+  ######### Também vou deixar aqui mais duas fórmulas para eu lembrar depois:
+  ######### x - xl = l
+  ######### x + xu = u
 
   GB_struct = GoodBroyden(qnc, it_max)
   qncGB     = GB_struct.qnc
@@ -474,7 +535,7 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
   mult = 1.0
   alpha_m = 0.5*(GB_struct.qnc.αp + GB_struct.qnc.αd)
   sig = min(sig_max, 1.0 - alpha_m) # OBS: contas recentes (2025) mostram que escolher sigma igual à 1 - alpha é mais interessante. Como na prática estamos usando dois alphas, estou considerando a média dos dois.
-  
+
   cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qncGB.pt_cp.x, qncGB.pt_cp.xl, qncGB.pt_cp.xu, qncGB.pt_cp.y, qncGB.pt_cp.zl, qncGB.pt_cp.zu, qncGB.pt_cp.μ # Nomes
   copyto!(cp_x, pt.x)
   copyto!(cp_xl, pt.xl)
@@ -483,8 +544,8 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
   copyto!(cp_zl, pt.zl)
   copyto!(cp_zu, pt.zu)
   qncGB.pt_cp.μ = pt.μ
-#  cp_x, cp_y, cp_xl, cp_xu, cp_zl, cp_zu, cp_mu = copy(pt.x), copy(pt.y), copy(pt.xl), copy(pt.xu), copy(pt.zl), copy(pt.zu), copy(pt.μ) # Fazendo cópia do iterando
-  
+  #  cp_x, cp_y, cp_xl, cp_xu, cp_zl, cp_zu, cp_mu = copy(pt.x), copy(pt.y), copy(pt.xl), copy(pt.xu), copy(pt.zl), copy(pt.zu), copy(pt.μ) # Fazendo cópia do iterando
+
   t = 1
 
   while true
@@ -505,15 +566,15 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 
     # Descarta os deslocamentos feitos durante o método de Broyden e retorna mu para seu valor original
 
-    qncGB.pt.x  .= cp_x
-    qncGB.pt.xl .= cp_xl
-    qncGB.pt.xu .= cp_xu
-    qncGB.pt.y  .= cp_y
-    qncGB.pt.zl .= cp_zl
-    qncGB.pt.zu .= cp_zu
-    qncGB.pt.μ   = cp_mu
+    @. qncGB.pt.x  = cp_x
+    @. qncGB.pt.xl = cp_xl
+    @. qncGB.pt.xu = cp_xu
+    @. qncGB.pt.y  = cp_y
+    @. qncGB.pt.zl = cp_zl
+    @. qncGB.pt.zu = cp_zu
+    qncGB.pt.μ     = cp_mu
 
-##### AQUI COMEÇA O MÉTODO ALTERNATIVO #####
+    ##### AQUI COMEÇA O MÉTODO ALTERNATIVO #####
 
     if t == 3 # 3 por padrao # 30 iterações é suficiente para praticamente zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
 
@@ -526,32 +587,32 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
       if !(b_status)
 
         println("WARNING: O método alternativo falhou. Andando apenas na direção preditora, sem correções...")
-        
+
         # Descarta os deslocamentos feitos durante o método de Broyden e retorna mu para seu valor original
 
-        qncGB.pt.x  .= cp_x
-        qncGB.pt.xl .= cp_xl
-        qncGB.pt.xu .= cp_xu
-        qncGB.pt.y  .= cp_y
-        qncGB.pt.zl .= cp_zl
-        qncGB.pt.zu .= cp_zu
-        qncGB.pt.μ   = cp_mu
+        @. qncGB.pt.x  = cp_x
+        @. qncGB.pt.xl = cp_xl
+        @. qncGB.pt.xu = cp_xu
+        @. qncGB.pt.y  = cp_y
+        @. qncGB.pt.zl = cp_zl
+        @. qncGB.pt.zu = cp_zu
+        qncGB.pt.μ     = cp_mu
 
         # Anda apenas na direção preditora
-        
-#        qncGB.pt.x  .+= (params.StepDampFactor * qncGB.αp) .* Δ.x
-#        qncGB.pt.xl .+= (params.StepDampFactor * qncGB.αp) .* Δ.xl
-#        qncGB.pt.xu .+= (params.StepDampFactor * qncGB.αp) .* Δ.xu
-#        qncGB.pt.y  .+= (params.StepDampFactor * qncGB.αd) .* Δ.y
-#        qncGB.pt.zl .+= (params.StepDampFactor * qncGB.αd) .* Δ.zl
-#        qncGB.pt.zu .+= (params.StepDampFactor * qncGB.αd) .* Δ.zu
 
-        Δc.x  .= (params.StepDampFactor * qncGB.αp) .* Δ.x
-        Δc.xl .= (params.StepDampFactor * qncGB.αp) .* Δ.xl
-        Δc.xu .= (params.StepDampFactor * qncGB.αp) .* Δ.xu
-        Δc.y  .= (params.StepDampFactor * qncGB.αd) .* Δ.y
-        Δc.zl .= (params.StepDampFactor * qncGB.αd) .* Δ.zl
-        Δc.zu .= (params.StepDampFactor * qncGB.αd) .* Δ.zu
+        #        qncGB.pt.x  .+= (params.StepDampFactor * qncGB.αp) .* Δ.x
+        #        qncGB.pt.xl .+= (params.StepDampFactor * qncGB.αp) .* Δ.xl
+        #        qncGB.pt.xu .+= (params.StepDampFactor * qncGB.αp) .* Δ.xu
+        #        qncGB.pt.y  .+= (params.StepDampFactor * qncGB.αd) .* Δ.y
+        #        qncGB.pt.zl .+= (params.StepDampFactor * qncGB.αd) .* Δ.zl
+        #        qncGB.pt.zu .+= (params.StepDampFactor * qncGB.αd) .* Δ.zu
+
+        @. Δc.x  = (params.StepDampFactor * qncGB.αp) * Δ.x
+        @. Δc.xl = (params.StepDampFactor * qncGB.αp) * Δ.xl
+        @. Δc.xu = (params.StepDampFactor * qncGB.αp) * Δ.xu
+        @. Δc.y  = (params.StepDampFactor * qncGB.αd) * Δ.y
+        @. Δc.zl = (params.StepDampFactor * qncGB.αd) * Δ.zl
+        @. Δc.zu = (params.StepDampFactor * qncGB.αd) * Δ.zu
 
 
       end
@@ -564,16 +625,16 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
   end
 
   # Calcula a direção resultante após o passo preditor e as iterações do método de Broyden
-   
-#  Δc.x  =  qncGB.pt.x - cp_x
-#  Δc.y  =  qncGB.pt.y - cp_y
-#  Δc.xl = qncGB.pt.xl - cp_xl
-#  Δc.xu = qncGB.pt.xu - cp_xu
-#  Δc.zl = qncGB.pt.zl - cp_zl
-#  Δc.zu = qncGB.pt.zu - cp_zu
+
+  #  Δc.x  =  qncGB.pt.x - cp_x
+  #  Δc.y  =  qncGB.pt.y - cp_y
+  #  Δc.xl = qncGB.pt.xl - cp_xl
+  #  Δc.xu = qncGB.pt.xu - cp_xu
+  #  Δc.zl = qncGB.pt.zl - cp_zl
+  #  Δc.zu = qncGB.pt.zu - cp_zu
 
   # Retorna o ponto para sua posição inicial.
-   
+
   pt.x  .= cp_x
   pt.xl .= cp_xl
   pt.xu .= cp_xu
