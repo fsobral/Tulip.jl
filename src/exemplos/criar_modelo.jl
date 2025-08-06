@@ -2,7 +2,7 @@ using Printf
 using JuMP
 #import Tulip
 
-function testar(nome, ignore = false)
+function testar(nome, output_level = 0, ignore = false)
 
     if nome == 1
         c = [1., 0]
@@ -25,11 +25,11 @@ function testar(nome, ignore = false)
         (c, A, b) = (p.c, p.A, p.b)
     end
 
-    modelar_e_resolver(c, A, b, ignore)
+    modelar_e_resolver(c, A, b, output_level, ignore)
 
 end
 
-function modelar_e_resolver(c, A, b, ignore)
+function modelar_e_resolver(c, A, b, output_level, ignore)
 
     m, n = size(A)
 
@@ -46,7 +46,7 @@ function modelar_e_resolver(c, A, b, ignore)
     @objective(lp, Min, c' * x)
 
     # Set some parameters
-    set_optimizer_attribute(lp, "OutputLevel", 0)  # disable output
+    set_optimizer_attribute(lp, "OutputLevel", output_level)  # disable output
     set_optimizer_attribute(lp, "Presolve_Level", 0)     # disable presolve
 
     # Solve the problem

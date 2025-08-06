@@ -578,7 +578,7 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
   while true
     qnc.n_tent_broyden += 1
     params.OutputLevel > 0 && println("Testagem: ", t)
-    params.OutputLevel > 0 && println("Alfa = ", alpha)
+    params.OutputLevel > 0 && println("Alfa (médio) = ", alpha_m)
     params.OutputLevel > 0 && println("Sigma = ", sig)
 
     b_status       = Broyden!(GB_struct, mult, sig, it_max, eps, params) 
