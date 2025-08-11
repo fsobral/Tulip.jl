@@ -267,6 +267,7 @@ function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
   calculate_resulting_step!(GB_struct, mult, params)
 
+  # Aplica afim escala (ja com mult aplicado)
   @. pt.x  += Δc.x
   @. pt.xl += Δc.xl
   @. pt.xu += Δc.xu
@@ -335,6 +336,7 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
   calculate_resulting_step!(GB_struct, mult, params)
 
+  # Aplica afim escala (ja com mult aplicado)
   @. pt.x  += Δc.x
   @. pt.xl += Δc.xl
   @. pt.xu += Δc.xu
@@ -351,6 +353,10 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   copyto!(qnc.ξd, qnc.res.rd)
   pt.μ = cp_mu
 
+  # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou G, 2012)
+  @. qnc.ξp += qnc.regD * (pt.y - cp_y)
+  @. qnc.ξd -= qnc.regP * (pt.x - cp_x)
+  # Adiciona os termos nao lineares
   @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
   @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
@@ -396,7 +402,10 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   copyto!(qnc.ξd, qnc.res.rd)
   pt.μ = cp_mu
 
-  @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
+  # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou G, 2012)
+  @. qnc.ξp += qnc.regD * (pt.y - cp_y)
+  @. qnc.ξd -= qnc.regP * (pt.x - cp_x)
+  # Adiciona os termos nao lineares@. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
   @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
   # Retorna o iterando para seu valor original
@@ -431,6 +440,7 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
     # Stopping criteria
 
     calculate_resulting_step!(GB_struct, mult, params)
+    # Neste momento Δc possui todos os passos corretores até o momento incluindo o passo previsor (ja reduzido por mult).
 
     # Atualizar o ponto apenas para testar o criterio de parada
 
@@ -472,6 +482,7 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
     @. sb = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
     @. sb += GB_struct.u[gb_size]
 
+    # !!! TODO Verificar a possível remoção disso!!
     deconcatenate(GB_struct.qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
     # Multiplicar a direção pelo tamanho do passo e armazenar tanto no qnc quanto na estrutura GoodBroyden
@@ -500,6 +511,10 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
     copyto!(qnc.ξd, qnc.res.rd)
     pt.μ = cp_mu
 
+    # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou G, 2012)
+    @. qnc.ξp += qnc.regD * (pt.y - cp_y)
+    @. qnc.ξd -= qnc.regP * (pt.x - cp_x)
+    # Adiciona os termos nao lineares
     @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
     @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
