@@ -176,7 +176,28 @@ function Broyden_convergence_test(qnc, eps = 1.0e-8)
 
 end
 
-function Broyden_parada(qnc, it, it_max, eps, sig)
+function Broyden_parada(GB_struct, it, it_max, eps, sig, mult, params)
+
+  qnc = GB_struct.qnc
+  dat = qnc.dat
+  pt  = qnc.pt
+  pt_cp  = qnc.pt_cp
+  Δ   = qnc.Δ
+  Δc  = qnc.Δc
+
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+
+  calculate_resulting_step!(GB_struct, mult, params)
+  # Neste momento Δc possui todos os passos corretores até o momento incluindo o passo previsor (ja reduzido por mult).
+
+  # Atualizar o ponto apenas para testar o criterio de parada
+
+  @. pt.x  +=  Δc.x
+  @. pt.xl +=  Δc.xl
+  @. pt.xu +=  Δc.xu
+  @. pt.y  +=  Δc.y
+  @. pt.zl +=  Δc.zl
+  @. pt.zu +=  Δc.zu
 
   cp_mu = qnc.pt_cp.μ
 
@@ -193,6 +214,15 @@ function Broyden_parada(qnc, it, it_max, eps, sig)
   if convergence || it >= it_max
     stop = true
   end
+
+  # Retorna o iterando para seu valor original
+
+  @. pt.x  = pt_cp.x 
+  @. pt.xl = pt_cp.xl
+  @. pt.xu = pt_cp.xu
+  @. pt.y  = pt_cp.y 
+  @. pt.zl = pt_cp.zl
+  @. pt.zu = pt_cp.zu
 
   return stop, convergence, accept_point
 
@@ -224,6 +254,16 @@ function concatenate(qnc, v, x, xl, xu, y, zl, zu)
 
 end
 
+"
+Calcula a soma de todos os passos (afim escala e correções de Broyden) registrados até o momento em Δ e GB_struct.sb.
+
+O passo afim escala é somado considerando o tamanho de passo máximo, controlado pelo multiplicador 'mult'.
+
+Os passos de Broyden são dados de forma completa quando o algoritmo principal é utilizado. No caso do método alternativo, os vetores GB_struct.sb[i] já estão multiplicados de seus respectivos tamanhos de passo.
+
+Por fim, o passo que resulta desta grande soma é finalmente guardado em Δc, sobreescrevendo qualquer informação salva nesta estrutura.
+
+"
 function calculate_resulting_step!(GB_struct, mult, params)
 
   qnc = GB_struct.qnc
@@ -234,6 +274,8 @@ function calculate_resulting_step!(GB_struct, mult, params)
 
   # Calcula a direção resultante do passo de Newton junto com os passos de Broyden
 
+  # Guarda o passo de Newton em Δc. Isto sobreescreve qualquer valor previamente salvo neste "point".
+
   @. Δc.x  = (mult * params.StepDampFactor * qnc.αp) * Δ.x 
   @. Δc.xl = (mult * params.StepDampFactor * qnc.αp) * Δ.xl
   @. Δc.xu = (mult * params.StepDampFactor * qnc.αp) * Δ.xu
@@ -241,6 +283,7 @@ function calculate_resulting_step!(GB_struct, mult, params)
   @. Δc.zl = (mult * params.StepDampFactor * qnc.αd) * Δ.zl
   @. Δc.zu = (mult * params.StepDampFactor * qnc.αd) * Δ.zu
 
+  # Soma todas as direções de Broyden calculadas até o momento. OBS: A direção atual só estará inclusa aqui se a função update! já tiver sido executada.
   for i=1:GB_struct.size 
     @. Δc.x  += GB_struct.sb[i][1       : n]
     @. Δc.xl += GB_struct.sb[i][n+1     : 2*n]
@@ -252,6 +295,10 @@ function calculate_resulting_step!(GB_struct, mult, params)
 
 end
 
+"
+Corrige a direção de Broyden de acordo com o tamanho máximo de passo segundo max_step_length_pd. A direção corrigida é armazenada tanto em Δc quanto em sua forma concatenada sb para a utilização posterior.
+
+"
 function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
   qnc = GB_struct.qnc
@@ -263,11 +310,12 @@ function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
   cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
 
-  # Recupera o iterando atual para o método alternativo
+  # Calcula a soma de todos os passos desde o afim escala e guarda em Δc.
 
   calculate_resulting_step!(GB_struct, mult, params)
 
-  # Aplica afim escala (ja com mult aplicado)
+  # Recupera o iterando atual para o método alternativo
+
   @. pt.x  += Δc.x
   @. pt.xl += Δc.xl
   @. pt.xu += Δc.xu
@@ -275,7 +323,7 @@ function Broyden_alternative_step!(GB_struct, mult, params, sb)
   @. pt.zl += Δc.zl
   @. pt.zu += Δc.zu
 
-  # Recupera a direção nova
+  # Recupera a direção nova (isso é necessário, pois Δc foi sobreescrito após a função calculate_resulting_step! ser executada)
 
   deconcatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
@@ -307,7 +355,11 @@ function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
 end
 
-function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
+"
+Calcula os resíduos para a construção do lado direito de um sistema para ser resolvido pela função solve_newton_system!. Esses resíduos serão guardados em GB_struct.qnc, substituindo quaisquer valores anteriormente salvos.
+
+"
+function calculate_broyden_residuals!(GB_struct, cp_mu, sig)
 
   qnc = GB_struct.qnc
   dat = qnc.dat
@@ -317,32 +369,6 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   Δc  = qnc.Δc
 
   cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
-
-  m    = qnc.pt.m
-  n    = qnc.pt.n
-
-  ### 1ª iteração de Broyden
-
-  it = 1
-
-  # Anda na direção preditora, com o tamanho de passo especificado, apenas para calcular os resíduos
-
-  #@. pt.x  += (mult * params.StepDampFactor * qnc.αp) * Δ.x
-  #@. pt.xl += (mult * params.StepDampFactor * qnc.αp) * Δ.xl
-  #@. pt.xu += (mult * params.StepDampFactor * qnc.αp) * Δ.xu
-  #@. pt.y  += (mult * params.StepDampFactor * qnc.αd) * Δ.y
-  #@. pt.zl += (mult * params.StepDampFactor * qnc.αd) * Δ.zl
-  #@. pt.zu += (mult * params.StepDampFactor * qnc.αd) * Δ.zu
-
-  calculate_resulting_step!(GB_struct, mult, params)
-
-  # Aplica afim escala (ja com mult aplicado)
-  @. pt.x  += Δc.x
-  @. pt.xl += Δc.xl
-  @. pt.xu += Δc.xu
-  @. pt.y  += Δc.y
-  @. pt.zl += Δc.zl
-  @. pt.zu += Δc.zu
 
   # Calcula os resíduos no ponto atual (parte do lado direito em solve_newton_system!)
 
@@ -360,53 +386,35 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
   @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
-  # Retorna o iterando para seu valor original
+end
 
-  @. pt.x  = pt_cp.x 
-  @. pt.xl = pt_cp.xl
-  @. pt.xu = pt_cp.xu
-  @. pt.y  = pt_cp.y 
-  @. pt.zl = pt_cp.zl
-  @. pt.zu = pt_cp.zu
+"
+Calcula a primeira direção de Broyden e guarda em Δc. Esta função sobreescreve Δc, GB_struct.qnc.res e os ξ's.
+"
+function calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
 
-  ldiv!(GB_struct) # Pressupõe que os resíduos após o passo de Newton estejam guardados em qnc
+  qnc   = GB_struct.qnc
+  dat   = qnc.dat
+  pt    = qnc.pt
+  pt_cp = qnc.pt_cp
+  Δ     = qnc.Δ
+  Δc    = qnc.Δc
 
-  #  sb = zeros(5*n+m) # Cria o vetor sb
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
 
-  # Cria o vetor sb
+  # Anda na direção preditora, com o tamanho de passo especificado, apenas para calcular os resíduos
 
-  GB_struct.sb[GB_struct.size + 1] = spzeros(5*n+m) 
-  sb = GB_struct.sb[GB_struct.size + 1]
+  calculate_resulting_step!(GB_struct, mult, params)
 
-  concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
+  # Aplica afim escala (ja com mult aplicado)
+  @. pt.x  += Δc.x
+  @. pt.xl += Δc.xl
+  @. pt.xu += Δc.xu
+  @. pt.y  += Δc.y
+  @. pt.zl += Δc.zl
+  @. pt.zu += Δc.zu
 
-  if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
-    Broyden_alternative_step!(GB_struct, mult, params, sb)
-  end
-
-  # Atualiza o ponto apenas para calcular os novos resíduos
-
-  @. pt.x  += (mult * params.StepDampFactor * qnc.αp) * Δ.x  + Δc.x
-  @. pt.xl += (mult * params.StepDampFactor * qnc.αp) * Δ.xl + Δc.xl
-  @. pt.xu += (mult * params.StepDampFactor * qnc.αp) * Δ.xu + Δc.xu
-  @. pt.y  += (mult * params.StepDampFactor * qnc.αd) * Δ.y  + Δc.y
-  @. pt.zl += (mult * params.StepDampFactor * qnc.αd) * Δ.zl + Δc.zl
-  @. pt.zu += (mult * params.StepDampFactor * qnc.αd) * Δ.zu + Δc.zu
-
-  # Calcula -F_{sigma * mu} (w + d_b) para depois calcular u
-
-  compute_residuals!(qnc)
-  copyto!(qnc.ξp, qnc.res.rp)
-  copyto!(qnc.ξl, qnc.res.rl)
-  copyto!(qnc.ξu, qnc.res.ru)
-  copyto!(qnc.ξd, qnc.res.rd)
-  pt.μ = cp_mu
-
-  # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou G, 2012)
-  @. qnc.ξp += qnc.regD * (pt.y - cp_y)
-  @. qnc.ξd -= qnc.regP * (pt.x - cp_x)
-  # Adiciona os termos nao lineares@. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
-  @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
+  calculate_broyden_residuals!(GB_struct, cp_mu, sig)
 
   # Retorna o iterando para seu valor original
 
@@ -417,50 +425,154 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
   @. pt.zl = pt_cp.zl
   @. pt.zu = pt_cp.zu
 
+  # Calcula a direção completa de Broyden e guarda em Δc.
   ldiv!(GB_struct) # Pressupõe que os resíduos após o passo de Newton estejam guardados em qnc
-  #  u = zeros(5*n+m) # Cria o vetor u
+
+end
+
+"
+Calcula o novo vetor u, armazenando-o em GB_struct. AVISO: Durante o processo, Δc será sobreescrito. 
+
+"
+function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
+
+  qnc   = GB_struct.qnc
+  dat   = qnc.dat
+  pt    = qnc.pt
+  pt_cp = qnc.pt_cp
+  Δ     = qnc.Δ
+  Δc    = qnc.Δc
+
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+
+  m = qnc.pt.m
+  n = qnc.pt.n
+
+
+  calculate_resulting_step!(GB_struct, mult, params)
+
+  # Atualizar o ponto apenas para calcular os resíduos
+
+  @. pt.x  +=  Δc.x  + sb[1       : n]
+  @. pt.xl +=  Δc.xl + sb[n+1     : 2*n]
+  @. pt.xu +=  Δc.xu + sb[2*n+1   : 3*n]
+  @. pt.y  +=  Δc.y  + sb[3*n+1   : 3*n+m]
+  @. pt.zl +=  Δc.zl + sb[3*n+m+1 : 4*n+m]
+  @. pt.zu +=  Δc.zu + sb[4*n+m+1 : 5*n+m]
+
+  # Calcular novo u
+
+  calculate_broyden_residuals!(GB_struct, cp_mu, sig)
+
+  # Retorna o iterando para seu valor original
+
+  @. pt.x  = pt_cp.x 
+  @. pt.xl = pt_cp.xl
+  @. pt.xu = pt_cp.xu
+  @. pt.y  = pt_cp.y 
+  @. pt.zl = pt_cp.zl
+  @. pt.zu = pt_cp.zu
 
   # Cria o vetor u
 
   GB_struct.u[GB_struct.size + 1] = spzeros(5*n+m) 
   u = GB_struct.u[GB_struct.size + 1]
 
-  concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
+  ldiv!(GB_struct) # Pressupõe que os resíduos do iterando mais atual estejam guardados em qnc
+  concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
 
-  update!(GB_struct)
+end
 
-  it += 1
+"
+Esta função realiza o cálculo da direção de Broyden atual (passo cheio), e a armazena tanto em Δc quanto em sb para uso posterior. No caso do método alternativo, são guardados os passos já ajustados de acordo com o tamanho de passo dado por max_step_length_pd. 
 
-  ### Fim da 1ª iteração de Broyden
+"
+function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_alt)
 
-  ### Iterações posteriores...
+  # Apelidos iniciais
 
-  while true # Main loop
+  qnc     = GB_struct.qnc
+  dat     = qnc.dat
+  pt      = qnc.pt
+  pt_cp   = qnc.pt_cp
+  Δ       = qnc.Δ
+  Δc      = qnc.Δc
+  gb_size = GB_struct.size
+
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+
+  m    = qnc.pt.m
+  n    = qnc.pt.n
+
+  if it == 1 # Na primeira iteração é diferente
+    # Calcula a primeira direção de Broyden e guarda em Δc.
+    calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
+
+
+    concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o sb com as entradas de Δc
+
+  else
+
+    @. sb = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
+    @. sb += GB_struct.u[gb_size]
+
+    # !!! TODO Verificar a possível remoção disso!!
+    deconcatenate(GB_struct.qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
+  end
+
+  # Apenas para o método alternativo: controla o tamanho do passo de Broyden.
+  if b_alt 
+    Broyden_alternative_step!(GB_struct, mult, params, sb)
+  end
+
+
+
+end
+
+function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
+
+  # Apelidos iniciais
+
+  qnc   = GB_struct.qnc
+  dat   = qnc.dat
+  pt    = qnc.pt
+  pt_cp = qnc.pt_cp
+  Δ     = qnc.Δ
+  Δc    = qnc.Δc
+
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+
+  m    = qnc.pt.m
+  n    = qnc.pt.n
+
+  # Laço principal
+
+  for it=1:it_max
+
+    # 1 ETAPA: Calcula sb
+
+    gb_size = GB_struct.size
+
+    # Cria o vetor sb dentro de GB_struct e guarda a direção nele
+    GB_struct.sb[GB_struct.size + 1] = spzeros(5*n+m) 
+    sb = GB_struct.sb[GB_struct.size + 1]
+
+    calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_alt)
+
+    # 2 ETAPA: Calcula u
+
+    # Calcula o vetor u e guarda na estrutura GB_struct
+    calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
+
+    # 3 ETAPA: Atualiza a estrutura Good Broyden (calcula rho e aumenta GB_struct.size)
+
+    update!(GB_struct)
+
+    # 4 ETAPA: Critério de parada
 
     # Stopping criteria
 
-    calculate_resulting_step!(GB_struct, mult, params)
-    # Neste momento Δc possui todos os passos corretores até o momento incluindo o passo previsor (ja reduzido por mult).
-
-    # Atualizar o ponto apenas para testar o criterio de parada
-
-    @. pt.x  +=  Δc.x
-    @. pt.xl +=  Δc.xl
-    @. pt.xu +=  Δc.xu
-    @. pt.y  +=  Δc.y
-    @. pt.zl +=  Δc.zl
-    @. pt.zu +=  Δc.zu
-
-    stop, convergence, accept_point = Broyden_parada(qnc, it, it_max, eps, sig)
-
-    # Retorna o iterando para seu valor original
-
-    @. pt.x  = pt_cp.x 
-    @. pt.xl = pt_cp.xl
-    @. pt.xu = pt_cp.xu
-    @. pt.y  = pt_cp.y 
-    @. pt.zl = pt_cp.zl
-    @. pt.zu = pt_cp.zu
+    stop, convergence, accept_point = Broyden_parada(GB_struct, it, it_max, eps, sig, mult, params)
 
     if stop == true
       params.OutputLevel > 0 &&  println("Parou por que? stop / convergence / accept_point : ", (stop, convergence, accept_point))
@@ -471,73 +583,6 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
       return accept_point
     end
-
-    gb_size = GB_struct.size
-
-    # Cria o vetor sb
-
-    GB_struct.sb[GB_struct.size + 1] = spzeros(5*n+m) 
-    sb = GB_struct.sb[GB_struct.size + 1]
-
-    @. sb = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
-    @. sb += GB_struct.u[gb_size]
-
-    # !!! TODO Verificar a possível remoção disso!!
-    deconcatenate(GB_struct.qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
-
-    # Multiplicar a direção pelo tamanho do passo e armazenar tanto no qnc quanto na estrutura GoodBroyden
-
-    if b_alt # Se for o metodo alternativo, controla o tamanho do passo de Broyden.
-      Broyden_alternative_step!(GB_struct, mult, params, sb)
-    end
-
-    calculate_resulting_step!(GB_struct, mult, params)
-
-    # Atualizar o ponto apenas para calcular os resíduos
-
-    @. pt.x  +=  Δc.x  + sb[1       : n]
-    @. pt.xl +=  Δc.xl + sb[n+1     : 2*n]
-    @. pt.xu +=  Δc.xu + sb[2*n+1   : 3*n]
-    @. pt.y  +=  Δc.y  + sb[3*n+1   : 3*n+m]
-    @. pt.zl +=  Δc.zl + sb[3*n+m+1 : 4*n+m]
-    @. pt.zu +=  Δc.zu + sb[4*n+m+1 : 5*n+m]
-
-    # Calcular novo u
-
-    compute_residuals!(qnc)
-    copyto!(qnc.ξp, qnc.res.rp)
-    copyto!(qnc.ξl, qnc.res.rl)
-    copyto!(qnc.ξu, qnc.res.ru)
-    copyto!(qnc.ξd, qnc.res.rd)
-    pt.μ = cp_mu
-
-    # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou G, 2012)
-    @. qnc.ξp += qnc.regD * (pt.y - cp_y)
-    @. qnc.ξd -= qnc.regP * (pt.x - cp_x)
-    # Adiciona os termos nao lineares
-    @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
-    @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
-
-    # Retorna o iterando para seu valor original
-
-    @. pt.x  = pt_cp.x 
-    @. pt.xl = pt_cp.xl
-    @. pt.xu = pt_cp.xu
-    @. pt.y  = pt_cp.y 
-    @. pt.zl = pt_cp.zl
-    @. pt.zu = pt_cp.zu
-
-    # Cria o vetor u
-
-    GB_struct.u[GB_struct.size + 1] = spzeros(5*n+m) 
-    u = GB_struct.u[GB_struct.size + 1]
-
-    ldiv!(GB_struct) # Pressupõe que os resíduos do iterando mais atual estejam guardados em qnc
-    concatenate(qnc, u, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu)
-
-    update!(GB_struct)
-
-    it += 1
 
   end
 
