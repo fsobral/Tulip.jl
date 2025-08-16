@@ -1,6 +1,11 @@
-# TODO: Tentar não modificar as partes presumidamente imutáveis da estrutura QNC pelo Tulip original; (fiz isso, com exceção do ponto, que tenho que atualizar para calcular os resíduos, mas retorno ao valor inicial sempre através de uma cópia)
-# TODO: Abrir as contas do método de Broyden para evitar concatenar e desconcatenar vetores;
-# TODO: Armazenar as cópias que precisam ser feitas dentro da estrutura GoodBroyden; (eu fiz isso, mas guardei na estrutura qnc)
+# TODO: Tentar não modificar as partes presumidamente imutáveis da estrutura
+# QNC pelo Tulip original; (fiz isso, com exceção do ponto, que tenho que
+# atualizar para calcular os resíduos, mas retorno ao valor inicial sempre
+# através de uma cópia)
+# TODO: Abrir as contas do método de Broyden para evitar concatenar e
+# desconcatenar vetores;
+# TODO: Armazenar as cópias que precisam ser feitas dentro da estrutura
+# GoodBroyden; (eu fiz isso, mas guardei na estrutura qnc)
 
 
 using LinearAlgebra
@@ -15,19 +20,26 @@ mutable struct GoodBroyden{S}
   size :: Int
 
   function GoodBroyden(qnc, max_size=10)
-    return new{Float64}(qnc, Vector{Vector{Float64}}(undef, max_size), Vector{Vector{Float64}}(undef, max_size), Vector{Float64}(undef, max_size), 0)
+    return new{Float64}(qnc, Vector{Vector{Float64}}(undef, max_size),
+                        Vector{Vector{Float64}}(undef, max_size),
+                        Vector{Float64}(undef, max_size), 0)
   end
 end
 
 """
     ldiv!(A::GoodBroyden, b, x)
 
-Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden update.
+Solves the linear system \$A x = b\$ where \$A\$ is given by the Good Broyden
+update.
 """
-LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a consumir mais memória com o passar das iterações. Esse aumento é bem lento, e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável para 100 iterações, então creio que não vai ser um problema.
+LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a
+  # consumir mais memória com o passar das iterações. Esse aumento é bem lento,
+  # e mesmo em um problema grande (QAP12) o uso de memória foi bem razoável
+  # para 100 iterações, então creio que não vai ser um problema.
 
   qnc = A.qnc
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl,
+  qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
 
   # Resolve o caso base
 
@@ -35,33 +47,11 @@ LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a c
   m  = pt.m
   n  = pt.n
 
-  #  # Copiar o iterando atual de Broyden
-  #
-  #  cp_x_b   = copy(pt.x)
-  #  cp_xl_b  = copy(pt.xl)
-  #  cp_xu_b  = copy(pt.xu)
-  #  cp_y_b   = copy(pt.y)
-  #  cp_zl_b  = copy(pt.zl)
-  #  cp_zu_b  = copy(pt.zu)
-
-  #  # Recuperar a jacobiana original (na função solve_newton_system!, a jacobiana é calculada no ponto atual guardado em qnc. Isto significa que não estaríamos usando a mesma jacobiana do passo preditor. Portanto, ao retornar ao ponto anterior ao passo preditor, estamos garantindo que a mesma jacobiana do passo preditor será utilizada como B_0 pelo método de Broyden)
-  #
-  #  pt.x  .= cp_x 
-  #  pt.xl .= cp_xl
-  #  pt.xu .= cp_xu
-  #  pt.y  .= cp_y 
-  #  pt.zl .= cp_zl
-  #  pt.zu .= cp_zu
-
-  # O comando abaixo pressupõe que o lado direito correto já está armazenado em qnc. Também pressupõe que o ponto atual armazenado em qnc seja o ponto antes do passo preditor (pois caso contrário, B_0 não seria a jacobiana utilizada no passo preditor).
+  # O comando abaixo pressupõe que o lado direito correto já está armazenado em
+  # qnc. Também pressupõe que o ponto atual armazenado em qnc seja o ponto
+  # antes do passo preditor (pois caso contrário, B_0 não seria a jacobiana
+  # utilizada no passo preditor).
   solve_newton_system!(qnc.Δc, qnc, qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu)
-
-  #  pt.x  .=  cp_x_b 
-  #  pt.xl .= cp_xl_b
-  #  pt.xu .= cp_xu_b
-  #  pt.y  .=  cp_y_b 
-  #  pt.zl .= cp_zl_b
-  #  pt.zu .= cp_zu_b
 
   Δc = qnc.Δc
 
@@ -73,24 +63,11 @@ LinearAlgebra.ldiv!(A::GoodBroyden) = begin # WARNING: Essa função começa a c
   rho  = nothing
   prod = nothing
   for i = 1:mm
-    u   = A.u[i] # Sem intenção de fazer cópias
-    sb  = A.sb[i] # Sem intenção de fazer cópias
-    #     rho = A.rho[i]
-    #    rho = 0
-    #    for j=1:(5*n+m) # produto interno dot(sb, b)
-    #      prod  = sb[j]
-    #      prod *= b[j]
-    #      rho  += prod
-    #    end
-    rho = dot(sb, b)
+    u    = A.u[i] # Sem intenção de fazer cópias
+    sb   = A.sb[i] # Sem intenção de fazer cópias
+    rho  = dot(sb, b)
     rho /= A.rho[i]
 
-    #        rho = dot(sb, b) / rho
-    #        b .= b + (dot(sb, b) / rho) * u
-    #        b .= b + rho * u
-    #    for j=1:(5*n+m)
-    #      b[j] = b[j] + rho * u[j]
-    #    end
     @. b += rho * u
 
   end
@@ -139,7 +116,8 @@ function positivity_test(qnc)
   pt = qnc.pt
   n  = qnc.pt.n
 
-  # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar com o Tulip
+  # Teste de positividade de xl, zl, xu, zu sem gambiarra pra compatibilizar
+  # com o Tulip
 
   for i=1:n
     if (pt.xl[i] < 0) || (pt.zl[i] < 0) || (pt.xu[i] < 0) || (pt.zu[i] < 0)
@@ -167,7 +145,8 @@ end
 
 function Broyden_convergence_test(qnc, eps = 1.0e-8)
 
-  for v in (qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu) # soh faz sentido se eu recalcular os residuos antes de rodar essa funcao
+  for v in (qnc.ξp, qnc.ξl, qnc.ξu, qnc.ξd, qnc.ξxzl, qnc.ξxzu) # soh faz
+    # sentido se eu recalcular os residuos antes de rodar essa funcao
     if norm(v) > eps
       return false
     end
