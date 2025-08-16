@@ -301,14 +301,11 @@ Corrige a direção de Broyden de acordo com o tamanho máximo de passo segundo 
 "
 function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
-  qnc = GB_struct.qnc
-  dat = qnc.dat
-  pt  = qnc.pt
-  pt_cp  = qnc.pt_cp
-  Δ   = qnc.Δ
-  Δc  = qnc.Δc
-
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+  # Apelidos 
+  qnc   = GB_struct.qnc
+  pt    = qnc.pt
+  pt_cp = qnc.pt_cp
+  Δc    = qnc.Δc
 
   # Calcula a soma de todos os passos desde o afim escala e guarda em Δc.
 
@@ -361,14 +358,11 @@ Calcula os resíduos para a construção do lado direito de um sistema para ser 
 "
 function calculate_broyden_residuals!(GB_struct, cp_mu, sig)
 
-  qnc = GB_struct.qnc
-  dat = qnc.dat
-  pt  = qnc.pt
-  pt_cp  = qnc.pt_cp
-  Δ   = qnc.Δ
-  Δc  = qnc.Δc
-
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
+  # Apelidos 
+  qnc   = GB_struct.qnc
+  dat   = qnc.dat
+  pt    = qnc.pt
+  pt_cp = qnc.pt_cp
 
   # Calcula os resíduos no ponto atual (parte do lado direito em solve_newton_system!)
 
@@ -380,8 +374,8 @@ function calculate_broyden_residuals!(GB_struct, cp_mu, sig)
   pt.μ = cp_mu
 
   # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou G, 2012)
-  @. qnc.ξp += qnc.regD * (pt.y - cp_y)
-  @. qnc.ξd -= qnc.regP * (pt.x - cp_x)
+  @. qnc.ξp -= qnc.regD * (pt.y - pt_cp.y)
+  @. qnc.ξd += qnc.regP * (pt.x - pt_cp.x)
   # Adiciona os termos nao lineares
   @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
   @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
@@ -393,14 +387,11 @@ Calcula a primeira direção de Broyden e guarda em Δc. Esta função sobreescr
 "
 function calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
 
+  # Apelidos 
   qnc   = GB_struct.qnc
-  dat   = qnc.dat
   pt    = qnc.pt
   pt_cp = qnc.pt_cp
-  Δ     = qnc.Δ
   Δc    = qnc.Δc
-
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
 
   # Anda na direção preditora, com o tamanho de passo especificado, apenas para calcular os resíduos
 
@@ -436,17 +427,13 @@ Calcula o novo vetor u, armazenando-o em GB_struct. AVISO: Durante o processo, �
 "
 function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
 
+  # Apelidos 
   qnc   = GB_struct.qnc
-  dat   = qnc.dat
   pt    = qnc.pt
   pt_cp = qnc.pt_cp
-  Δ     = qnc.Δ
   Δc    = qnc.Δc
-
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
-
-  m = qnc.pt.m
-  n = qnc.pt.n
+  m     = qnc.pt.m
+  n     = qnc.pt.n
 
 
   calculate_resulting_step!(GB_struct, mult, params)
@@ -489,20 +476,12 @@ Esta função realiza o cálculo da direção de Broyden atual (passo cheio), e 
 "
 function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_alt)
 
-  # Apelidos iniciais
-
+  # Apelidos
   qnc     = GB_struct.qnc
-  dat     = qnc.dat
-  pt      = qnc.pt
   pt_cp   = qnc.pt_cp
   Δ       = qnc.Δ
   Δc      = qnc.Δc
   gb_size = GB_struct.size
-
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
-
-  m    = qnc.pt.m
-  n    = qnc.pt.n
 
   if it == 1 # Na primeira iteração é diferente
     # Calcula a primeira direção de Broyden e guarda em Δc.
@@ -531,19 +510,13 @@ end
 
 function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
 
-  # Apelidos iniciais
-
+  # Apelidos
   qnc   = GB_struct.qnc
-  dat   = qnc.dat
   pt    = qnc.pt
   pt_cp = qnc.pt_cp
-  Δ     = qnc.Δ
-  Δc    = qnc.Δc
-
-  cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl, qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
-
-  m    = qnc.pt.m
-  n    = qnc.pt.n
+  m     = qnc.pt.m
+  n     = qnc.pt.n
+  cp_mu = qnc.pt_cp.μ
 
   # Laço principal
 
