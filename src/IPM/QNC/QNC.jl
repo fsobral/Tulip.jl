@@ -338,10 +338,14 @@ function ipm_optimize!(qnc::QNC{T}, params::IPMOptions{T}) where{T}
     try
       @timeit qnc.timer "Step" compute_step!(qnc, params)
 
-      params.OutputLevel > 0 && println("Nº total de tentativas de broyden : ", qnc.n_tent_broyden)
-      params.OutputLevel > 0 && println("Nº total de iterações de Broyden  : ", qnc.nitb)
-      params.OutputLevel > 0 && println("Nº total de correções alternativas: ", qnc.n_corr_alt)
-      params.OutputLevel > 0 && println("Nº total de correções da jacobiana: ", qnc.n_corr_jac)
+      params.OutputLevel > 0 && println("Nº total de tentativas de broyden : ",
+                                        qnc.n_tent_broyden)
+      params.OutputLevel > 0 && println("Nº total de iterações de Broyden  : ",
+                                        qnc.nitb)
+      params.OutputLevel > 0 && println("Nº total de correções alternativas: ",
+                                        qnc.n_corr_alt)
+      params.OutputLevel > 0 && println("Nº total de correções da jacobiana: ",
+                                        qnc.n_corr_jac)
     catch err
 
       if isa(err, PosDefException) || isa(err, SingularException)
@@ -365,7 +369,8 @@ function ipm_optimize!(qnc::QNC{T}, params::IPMOptions{T}) where{T}
     qnc.niter += 1
   end
 
-  params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ", qnc.niter)
+  params.OutputLevel > 0 && println("Nº de iterações (algoritmo principal): ",
+                                    qnc.niter)
 
   # TODO: print message based on termination status
   params.OutputLevel > 0 && println("Solver exited with status $((qnc.solver_status))")
