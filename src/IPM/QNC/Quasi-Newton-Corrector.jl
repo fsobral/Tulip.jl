@@ -1,12 +1,5 @@
-# TODO: Tentar não modificar as partes presumidamente imutáveis da estrutura
-# QNC pelo Tulip original; (fiz isso, com exceção do ponto, que tenho que
-# atualizar para calcular os resíduos, mas retorno ao valor inicial sempre
-# através de uma cópia)
 # TODO: Abrir as contas do método de Broyden para evitar concatenar e
 # desconcatenar vetores;
-# TODO: Armazenar as cópias que precisam ser feitas dentro da estrutura
-# GoodBroyden; (eu fiz isso, mas guardei na estrutura qnc)
-
 
 using LinearAlgebra
 import LinearAlgebra: ldiv!
@@ -84,16 +77,7 @@ Updates the Good Broyden approximation.
 """
 function update!(B::GoodBroyden)
 
-  #  u           = b
-
-  size        = B.size + 1
-  #  B.u[size]   = u
-
-  #  B.rho[size] = 0
-  #
-  #  for i=1:length(s)
-  #    B.rho[size] += s[i]*(s[i] - B.u[size][i])
-  #  end
+  size = B.size + 1
 
   s = B.sb[size]
 
@@ -107,8 +91,7 @@ function update!(B::GoodBroyden)
     B.rho[size] = 1.0e-8
   end
 
-  #B.sb[size] = s
-  B.size     = size
+  B.size = size
 
 end
 
@@ -133,7 +116,7 @@ end
 function decrease_and_feasibility_test(qnc, cp_mu, sig)
 
   cp_mu = qnc.pt_cp.μ
-  pt = qnc.pt
+  pt    = qnc.pt
   update_mu!(pt)
   if (pt.μ <= 0.5 * (1.0 + sig) * cp_mu) && positivity_test(qnc)
     pt.μ = cp_mu
@@ -158,12 +141,12 @@ end
 
 function Broyden_parada(GB_struct, it, it_max, eps, sig, mult, params)
 
-  qnc = GB_struct.qnc
-  dat = qnc.dat
-  pt  = qnc.pt
-  pt_cp  = qnc.pt_cp
-  Δ   = qnc.Δ
-  Δc  = qnc.Δc
+  qnc   = GB_struct.qnc
+  dat   = qnc.dat
+  pt    = qnc.pt
+  pt_cp = qnc.pt_cp
+  Δ     = qnc.Δ
+  Δc    = qnc.Δc
 
   cp_x, cp_xl, cp_xu, cp_y, cp_zl, cp_zu, cp_mu = qnc.pt_cp.x, qnc.pt_cp.xl,
   qnc.pt_cp.xu, qnc.pt_cp.y, qnc.pt_cp.zl, qnc.pt_cp.zu, qnc.pt_cp.μ # Nomes
@@ -225,8 +208,8 @@ end
 
 function concatenate(qnc, v, x, xl, xu, y, zl, zu)
 
-  m    = qnc.pt.m
-  n    = qnc.pt.n
+  m                 = qnc.pt.m
+  n                 = qnc.pt.n
   v[1:n]           .= x
   v[n+1:2*n]       .= xl
   v[2*n+1:3*n]     .= xu
@@ -236,7 +219,7 @@ function concatenate(qnc, v, x, xl, xu, y, zl, zu)
 
 end
 
-"
+"""
 Calcula a soma de todos os passos (afim escala e correções de Broyden)
 registrados até o momento em Δ e GB_struct.sb.
 
@@ -249,8 +232,7 @@ multiplicados de seus respectivos tamanhos de passo.
 
 Por fim, o passo que resulta desta grande soma é finalmente guardado em Δc,
 sobreescrevendo qualquer informação salva nesta estrutura.
-
-"
+"""
 function calculate_resulting_step!(GB_struct, mult, params)
 
   qnc = GB_struct.qnc
@@ -283,14 +265,18 @@ function calculate_resulting_step!(GB_struct, mult, params)
     @. Δc.zu += GB_struct.sb[i][4*n+m+1 : 5*n+m]
   end
 
+  # Neste momento, Δc é a direção resultante do passo de Newton junto com os
+  # passos de Broyden, exceto possivelmente o último sb calculado, pois para o
+  # incluir, é necessário que a função update! tenha sido rodada após o seu
+  # cálculo. 
+
 end
 
-"
+"""
 Corrige a direção de Broyden de acordo com o tamanho máximo de passo segundo
 max_step_length_pd. A direção corrigida é armazenada tanto em Δc quanto em sua
 forma concatenada sb para a utilização posterior.
-
-"
+"""
 function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
   # Apelidos 
@@ -345,12 +331,11 @@ function Broyden_alternative_step!(GB_struct, mult, params, sb)
 
 end
 
-"
+"""
 Calcula os resíduos para a construção do lado direito de um sistema para ser
 resolvido pela função solve_newton_system!. Esses resíduos serão guardados em
 GB_struct.qnc, substituindo quaisquer valores anteriormente salvos.
-
-"
+"""
 function calculate_broyden_residuals!(GB_struct, cp_mu, sig)
 
   # Apelidos 
@@ -371,18 +356,18 @@ function calculate_broyden_residuals!(GB_struct, cp_mu, sig)
 
   # Adiciona regularizacao referente aos pontos de referencia (ver GS, 2019 ou
   # G, 2012)
-  @. qnc.ξp -= qnc.regD * (pt.y - pt_cp.y)
-  @. qnc.ξd += qnc.regP * (pt.x - pt_cp.x)
+  @. qnc.ξp  -= qnc.regD * (pt.y - pt_cp.y)
+  @. qnc.ξd  += qnc.regP * (pt.x - pt_cp.x)
   # Adiciona os termos nao lineares
   @. qnc.ξxzl = (sig * pt.μ - pt.xl * pt.zl) * dat.lflag
   @. qnc.ξxzu = (sig * pt.μ - pt.xu * pt.zu) * dat.uflag
 
 end
 
-"
+"""
 Calcula a primeira direção de Broyden e guarda em Δc. Esta função sobreescreve
 Δc, GB_struct.qnc.res e os ξ's.
-"
+"""
 function calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
 
   # Apelidos 
@@ -421,11 +406,10 @@ function calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
 
 end
 
-"
+"""
 Calcula o novo vetor u, armazenando-o em GB_struct. AVISO: Durante o processo,
 Δc será sobreescrito. 
-
-"
+"""
 function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
 
   # Apelidos 
@@ -472,13 +456,12 @@ function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
 
 end
 
-"
+"""
 Esta função realiza o cálculo da direção de Broyden atual (passo cheio), e a
 armazena tanto em Δc quanto em sb para uso posterior. No caso do método
 alternativo, são guardados os passos já ajustados de acordo com o tamanho de
 passo dado por max_step_length_pd. 
-
-"
+"""
 function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_alt)
 
   # Apelidos
@@ -498,7 +481,7 @@ function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_al
 
   else
 
-    @. sb = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
+    @. sb  = (dot(GB_struct.sb[gb_size], GB_struct.u[gb_size]) / GB_struct.rho[gb_size]) * GB_struct.u[gb_size]
     @. sb += GB_struct.u[gb_size]
 
     # !!! TODO Verificar a possível remoção disso!!
@@ -576,18 +559,15 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 
   # Names
 
-  dat = qnc.dat
-  pt  = qnc.pt
-  res = qnc.res
-
-  Δ  = qnc.Δ
-  Δc = qnc.Δc
-
+  dat     = qnc.dat
+  pt      = qnc.pt
+  res     = qnc.res
+  Δ       = qnc.Δ
+  Δc      = qnc.Δc
   m, n, p = pt.m, pt.n, pt.p
-
-  A = dat.A
-  b = dat.b
-  c = dat.c
+  A       = dat.A
+  b       = dat.b
+  c       = dat.c
 
   ######### É bom levar em conta que o Tulip resolve um sistema envolvendo as
   ######### seguintes condições KKT:
@@ -605,9 +585,9 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
   GB_struct = GoodBroyden(qnc, it_max)
   qncGB     = GB_struct.qnc
 
-  mult = 1.0
+  mult    = 1.0
   alpha_m = 0.5*(GB_struct.qnc.αp + GB_struct.qnc.αd)
-  sig = min(sig_max, 1.0 - alpha_m) # OBS: contas recentes (2025) mostram que
+  sig     = min(sig_max, 1.0 - alpha_m) # OBS: contas recentes (2025) mostram que
   # escolher sigma igual à 1 - alpha é mais interessante. Como na prática 
   # estamos usando dois alphas, estou considerando a média dos dois.
 
@@ -658,10 +638,10 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
     if t == 3 # 3 por padrao # 30 iterações é suficiente para praticamente
       # zerar a diferença entre sig_max e sig (ela fica na ordem de 4.66e-10)
 
-      println("WARNING: Não foi possível determinar alpha e sigma de modo a
-              obter a convergência do passo corretor. Isso pode ter ocorrido
-              pois o ponto inicial não estava próximo o suficiente do caminho
-              central. Para contornar isso, será aplicado um método
+      println("WARNING: Não foi possível determinar alpha e sigma de modo a \
+              obter a convergência do passo corretor. Isso pode ter ocorrido \
+              pois o ponto inicial não estava próximo o suficiente do caminho \
+              central. Para contornar isso, será aplicado um método \
               quasi-newton alternativo.")
 
       sig = min(sig_max, 1.0 - 0.5*(GB_struct.qnc.αp + GB_struct.qnc.αd)) # OBS:
@@ -673,7 +653,7 @@ function Quasi_Newton_Corrector!(qnc::QNC, params, sig_max = 1-1.0e-4, eps=1.0e-
 
       if !(b_status)
 
-        println("WARNING: O método alternativo falhou. Andando apenas na
+        println("WARNING: O método alternativo falhou. Andando apenas na \
                 direção preditora, sem correções...")
 
         # Descarta os deslocamentos feitos durante o método de Broyden e
