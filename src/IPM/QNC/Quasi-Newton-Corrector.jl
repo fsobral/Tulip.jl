@@ -277,13 +277,14 @@ Corrige a direção de Broyden de acordo com o tamanho máximo de passo segundo
 max_step_length_pd. A direção corrigida é armazenada tanto em Δc quanto em sua
 forma concatenada sb para a utilização posterior.
 """
-function Broyden_alternative_step!(GB_struct, mult, params, sb)
+function Broyden_alternative_step!(GB_struct, mult, params)
 
   # Apelidos 
   qnc   = GB_struct.qnc
   pt    = qnc.pt
   pt_cp = qnc.pt_cp
   Δc    = qnc.Δc
+  sb    = GB_struct.sb[GB_struct.size + 1]
 
   # Calcula a soma de todos os passos desde o afim escala e guarda em Δc.
 
@@ -336,13 +337,14 @@ Calcula os resíduos para a construção do lado direito de um sistema para ser
 resolvido pela função solve_newton_system!. Esses resíduos serão guardados em
 GB_struct.qnc, substituindo quaisquer valores anteriormente salvos.
 """
-function calculate_broyden_residuals!(GB_struct, cp_mu, sig)
+function calculate_broyden_residuals!(GB_struct, sig)
 
   # Apelidos 
   qnc   = GB_struct.qnc
   dat   = qnc.dat
   pt    = qnc.pt
   pt_cp = qnc.pt_cp
+  cp_mu = qnc.pt_cp.μ
 
   # Calcula os resíduos no ponto atual (parte do lado direito em
   # solve_newton_system!)
@@ -368,13 +370,14 @@ end
 Calcula a primeira direção de Broyden e guarda em Δc. Esta função sobreescreve
 Δc, GB_struct.qnc.res e os ξ's.
 """
-function calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
+function calculate_first_broyden_step!(GB_struct, mult, params, sig)
 
   # Apelidos 
   qnc   = GB_struct.qnc
   pt    = qnc.pt
   pt_cp = qnc.pt_cp
   Δc    = qnc.Δc
+  cp_mu = qnc.pt_cp.μ
 
   # Anda na direção preditora, com o tamanho de passo especificado, apenas para
   # calcular os resíduos
@@ -389,7 +392,7 @@ function calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
   @. pt.zl += Δc.zl
   @. pt.zu += Δc.zu
 
-  calculate_broyden_residuals!(GB_struct, cp_mu, sig)
+  calculate_broyden_residuals!(GB_struct, sig)
 
   # Retorna o iterando para seu valor original
 
@@ -410,7 +413,7 @@ end
 Calcula o novo vetor u, armazenando-o em GB_struct. AVISO: Durante o processo,
 Δc será sobreescrito. 
 """
-function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
+function calculate_broyden_u!(GB_struct, mult, params, sig)
 
   # Apelidos 
   qnc   = GB_struct.qnc
@@ -419,6 +422,9 @@ function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
   Δc    = qnc.Δc
   m     = qnc.pt.m
   n     = qnc.pt.n
+  sb    = GB_struct.sb[GB_struct.size + 1]
+  cp_mu = qnc.pt_cp.μ
+
 
 
   calculate_resulting_step!(GB_struct, mult, params)
@@ -434,7 +440,7 @@ function calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
 
   # Calcular novo u
 
-  calculate_broyden_residuals!(GB_struct, cp_mu, sig)
+  calculate_broyden_residuals!(GB_struct, sig)
 
   # Retorna o iterando para seu valor original
 
@@ -462,7 +468,7 @@ armazena tanto em Δc quanto em sb para uso posterior. No caso do método
 alternativo, são guardados os passos já ajustados de acordo com o tamanho de
 passo dado por max_step_length_pd. 
 """
-function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_alt)
+function calculate_broyden_sb!(it, GB_struct, mult, params, sig, b_alt)
 
   # Apelidos
   qnc     = GB_struct.qnc
@@ -470,10 +476,12 @@ function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_al
   Δ       = qnc.Δ
   Δc      = qnc.Δc
   gb_size = GB_struct.size
+  sb      = GB_struct.sb[gb_size + 1]
+  cp_mu   = qnc.pt_cp.μ
 
   if it == 1 # Na primeira iteração é diferente
     # Calcula a primeira direção de Broyden e guarda em Δc.
-    calculate_first_broyden_step!(GB_struct, mult, params, cp_mu, sig)
+    calculate_first_broyden_step!(GB_struct, mult, params, sig)
 
 
     concatenate(qnc, sb, Δc.x, Δc.xl, Δc.xu, Δc.y, Δc.zl, Δc.zu) # preenche o
@@ -490,7 +498,7 @@ function calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_al
 
   # Apenas para o método alternativo: controla o tamanho do passo de Broyden.
   if b_alt 
-    Broyden_alternative_step!(GB_struct, mult, params, sb)
+    Broyden_alternative_step!(GB_struct, mult, params)
   end
 
 
@@ -519,12 +527,12 @@ function Broyden!(GB_struct, mult, sig, it_max, eps, params, b_alt = false)
     GB_struct.sb[GB_struct.size + 1] = spzeros(5*n+m) 
     sb = GB_struct.sb[GB_struct.size + 1]
 
-    calculate_broyden_sb!(it, GB_struct, mult, params, cp_mu, sig, sb, b_alt)
+    calculate_broyden_sb!(it, GB_struct, mult, params, sig, b_alt)
 
     # 2 ETAPA: Calcula u
 
     # Calcula o vetor u e guarda na estrutura GB_struct
-    calculate_broyden_u!(GB_struct, mult, params, sb, cp_mu, sig)
+    calculate_broyden_u!(GB_struct, mult, params, sig)
 
     # 3 ETAPA: Atualiza a estrutura Good Broyden
     # (calcula rho e aumenta GB_struct.size)
